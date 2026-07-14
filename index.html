@@ -2,14 +2,13 @@
 <html lang="zh-TW">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
 <title>旅遊記帳</title>
 <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 <style>
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;margin:0;padding:0}
-body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#f0f4f8}
+body{font-family:-apple-system,BlinkMacSystemFont,sans-serif;background:#f0f4f8}
 textarea{font-family:inherit}
 input[type=number]::-webkit-inner-spin-button,
 input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none}
@@ -17,34 +16,37 @@ input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none}
 </style>
 </head>
 <body>
-<div id="root"></div>
-<script type="text/babel" data-presets="react">
-const {useState,useEffect,useRef} = React;
+<div id="root"><div style="display:flex;align-items:center;justify-content:center;height:100vh;background:#1e293b;color:#94a3b8;font-family:system-ui;font-size:15px">載入中…</div></div>
+<script>
+'use strict';
+const{useState,useEffect,useRef}=React;
+const h=React.createElement;
 
-const CURRENCIES=[
-  {code:"JPY",name:"日圓",flag:"🇯🇵",symbol:"¥",apiKey:"jpy"},
-  {code:"CNY",name:"人民幣",flag:"🇨🇳",symbol:"¥",apiKey:"cny"},
-  {code:"KRW",name:"韓元",flag:"🇰🇷",symbol:"₩",apiKey:"krw"},
-  {code:"HKD",name:"港幣",flag:"🇭🇰",symbol:"HK$",apiKey:"hkd"},
-  {code:"USD",name:"美元",flag:"🇺🇸",symbol:"$",apiKey:"usd"},
-  {code:"EUR",name:"歐元",flag:"🇪🇺",symbol:"€",apiKey:"eur"},
+const CUR=[
+  {code:"JPY",name:"日圓",flag:"🇯🇵",sym:"¥",key:"jpy"},
+  {code:"CNY",name:"人民幣",flag:"🇨🇳",sym:"¥",key:"cny"},
+  {code:"KRW",name:"韓元",flag:"🇰🇷",sym:"₩",key:"krw"},
+  {code:"HKD",name:"港幣",flag:"🇭🇰",sym:"HK$",key:"hkd"},
+  {code:"USD",name:"美元",flag:"🇺🇸",sym:"$",key:"usd"},
+  {code:"EUR",name:"歐元",flag:"🇪🇺",sym:"€",key:"eur"},
 ];
 const EMOJIS=["✈️","🇯🇵","🇰🇷","🇨🇳","🇭🇰","🇺🇸","🇫🇷","🇩🇪","🇮🇹","🇹🇭","🇸🇬","🏖️","🗺️","🎌","🌏","🏔️","🛳️","🎡","🏕️","🎢"];
 const COLORS=["#0ea5e9","#f59e0b","#10b981","#f43f5e","#8b5cf6","#06b6d4","#ec4899","#14b8a6"];
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,6);
-const fmtRate=r=>r==null?"—":r<1?r.toFixed(4):r.toFixed(2);
-const mColor=(trip,name)=>COLORS[trip.members.indexOf(name)%COLORS.length]||"#94a3b8";
-const fmtDT=dt=>{if(!dt)return"";const d=new Date(dt);return`${d.getMonth()+1}/${d.getDate()} ${d.getHours()}:${String(d.getMinutes()).padStart(2,"0")}`;};
+const fmtR=r=>r==null?"—":r<1?r.toFixed(4):r.toFixed(2);
+const mc=(trip,name)=>COLORS[trip.members.indexOf(name)%COLORS.length]||"#94a3b8";
+const fmtT=dt=>{if(!dt)return"";const d=new Date(dt);return`${d.getMonth()+1}/${d.getDate()} ${d.getHours()}:${String(d.getMinutes()).padStart(2,"0")}`;};
+const ci=code=>CUR.find(c=>c.code===code);
 
-async function compressImg(file){
+async function compress(file){
   return new Promise((res,rej)=>{
     const img=new Image(),url=URL.createObjectURL(file);
     img.onload=()=>{
       URL.revokeObjectURL(url);
-      const MAX=1600,scale=Math.min(MAX/img.width,MAX/img.height,1);
-      const w=Math.round(img.width*scale),h=Math.round(img.height*scale);
-      const cv=document.createElement("canvas");cv.width=w;cv.height=h;
-      cv.getContext("2d").drawImage(img,0,0,w,h);
+      const MAX=1600,sc=Math.min(MAX/img.width,MAX/img.height,1);
+      const w=Math.round(img.width*sc),hh=Math.round(img.height*sc);
+      const cv=document.createElement("canvas");cv.width=w;cv.height=hh;
+      cv.getContext("2d").drawImage(img,0,0,w,hh);
       cv.toBlob(blob=>{
         if(!blob){rej(new Error("壓縮失敗"));return;}
         const r=new FileReader();
@@ -57,647 +59,500 @@ async function compressImg(file){
   });
 }
 
-/* ── App root ── */
+/* ── App ── */
 function App(){
-  const [view,setView]=useState("home");
-  const [trips,setTrips]=useState([]);
-  const [activeTripId,setActiveTripId]=useState(null);
-  const [loaded,setLoaded]=useState(false);
-  const [showNewTrip,setShowNewTrip]=useState(false);
-  const [liveRates,setLiveRates]=useState({});
-  const [rateDate,setRateDate]=useState("");
-  const [apiKey,setApiKey]=useState("");
-  const [showApiSetup,setShowApiSetup]=useState(false);
+  const[view,setView]=useState("home");
+  const[trips,setTrips]=useState([]);
+  const[activeId,setActiveId]=useState(null);
+  const[loaded,setLoaded]=useState(false);
+  const[showNew,setShowNew]=useState(false);
+  const[rates,setRates]=useState({});
+  const[rateDate,setRateDate]=useState("");
+  const[apiKey,setApiKey]=useState("");
+  const[showApi,setShowApi]=useState(false);
 
   useEffect(()=>{
-    try{const s=localStorage.getItem("travel-ledger-v2");if(s)setTrips(JSON.parse(s).trips||[]);}catch{}
-    setApiKey(localStorage.getItem("travel-apikey")||"");
+    try{const s=localStorage.getItem("tl2");if(s)setTrips(JSON.parse(s)||[]);}catch{}
+    setApiKey(localStorage.getItem("tl-key")||"");
     setLoaded(true);
     fetch("https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies/twd.json")
-      .then(r=>r.json()).then(data=>{
-        const r={};CURRENCIES.forEach(c=>{if(data.twd[c.apiKey])r[c.code]=1/data.twd[c.apiKey];});
-        setLiveRates(r);setRateDate(data.date);
+      .then(r=>r.json()).then(d=>{
+        const r={};CUR.forEach(c=>{if(d.twd[c.key])r[c.code]=1/d.twd[c.key];});
+        setRates(r);setRateDate(d.date);
       }).catch(()=>{});
   },[]);
 
   useEffect(()=>{
     if(!loaded)return;
-    try{localStorage.setItem("travel-ledger-v2",JSON.stringify({trips}));}catch{}
+    try{localStorage.setItem("tl2",JSON.stringify(trips));}catch{}
   },[trips,loaded]);
 
-  const saveApiKey=k=>{setApiKey(k);localStorage.setItem("travel-apikey",k);};
-  const updateTrip=(id,fn)=>setTrips(prev=>prev.map(t=>t.id===id?fn(t):t));
-  const activeTrip=trips.find(t=>t.id===activeTripId);
+  const saveKey=k=>{setApiKey(k);localStorage.setItem("tl-key",k);};
+  const upd=(id,fn)=>setTrips(p=>p.map(t=>t.id===id?fn(t):t));
+  const active=trips.find(t=>t.id===activeId);
 
-  if(!loaded)return<div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",background:"#1e293b",color:"#94a3b8",fontSize:15}}>載入中…</div>;
+  if(!loaded)return h("div",{style:{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",background:"#1e293b",color:"#94a3b8"}},"載入中…");
 
-  if(view==="trip"&&activeTrip)return(
-    <TripScreen trip={activeTrip} liveRates={liveRates} rateDate={rateDate} apiKey={apiKey}
-      onBack={()=>setView("home")} onUpdateTrip={fn=>updateTrip(activeTripId,fn)}
-      onNeedApiKey={()=>setShowApiSetup(true)}/>
-  );
+  if(view==="trip"&&active)return h(Trip,{
+    trip:active,rates,rateDate,apiKey,
+    onBack:()=>setView("home"),
+    onUpd:fn=>upd(activeId,fn),
+    onNeedKey:()=>setShowApi(true)
+  });
 
-  return(<>
-    <HomeScreen trips={trips} showNew={showNewTrip}
-      onShowNew={()=>setShowNewTrip(true)} onHideNew={()=>setShowNewTrip(false)}
-      onCreateTrip={data=>{
-        const t={id:uid(),createdAt:new Date().toISOString().slice(0,10),items:[],customRates:{},...data};
-        setTrips(prev=>[t,...prev]);setActiveTripId(t.id);setShowNewTrip(false);setView("trip");
-      }}
-      onOpenTrip={id=>{setActiveTripId(id);setView("trip");}}
-      onDeleteTrip={id=>setTrips(prev=>prev.filter(t=>t.id!==id))}
-      hasApiKey={!!apiKey} onApiSetup={()=>setShowApiSetup(true)}/>
-    {showApiSetup&&<ApiSetup currentKey={apiKey} onSave={k=>{saveApiKey(k);setShowApiSetup(false);}} onClose={()=>setShowApiSetup(false)}/>}
-  </>);
-}
-
-/* ── API Key Setup Overlay ── */
-function ApiSetup({currentKey,onSave,onClose}){
-  const [k,setK]=useState(currentKey);
-  return(
-    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.65)",zIndex:200,display:"flex",alignItems:"flex-end"}}>
-      <div style={{width:"100%",background:"#fff",borderRadius:"20px 20px 0 0",padding:24,paddingBottom:40}}>
-        <div style={{fontWeight:700,fontSize:17,color:"#1e293b",marginBottom:6}}>Anthropic API Key</div>
-        <div style={{fontSize:12,color:"#64748b",lineHeight:1.7,marginBottom:16}}>
-          前往 <a href="https://console.anthropic.com" target="_blank" style={{color:"#0ea5e9"}}>console.anthropic.com</a> 取得 API Key。僅存在本機，不會上傳。
-        </div>
-        <input type="password" value={k} onChange={e=>setK(e.target.value)} placeholder="sk-ant-..."
-          style={{width:"100%",border:"1.5px solid #e2e8f0",borderRadius:12,padding:"12px 14px",
-            fontSize:14,outline:"none",marginBottom:16,fontFamily:"monospace"}}/>
-        <div style={{display:"flex",gap:10}}>
-          <button onClick={onClose} style={{flex:1,padding:"12px 0",border:"1.5px solid #e2e8f0",borderRadius:12,
-            background:"#fff",color:"#64748b",fontWeight:600,fontSize:14,cursor:"pointer"}}>取消</button>
-          <button onClick={()=>onSave(k.trim())} disabled={!k.trim()}
-            style={{flex:2,padding:"12px 0",border:"none",borderRadius:12,
-              background:k.trim()?"#1e293b":"#e2e8f0",color:k.trim()?"#fff":"#94a3b8",
-              fontWeight:700,fontSize:14,cursor:"pointer"}}>儲存</button>
-        </div>
-      </div>
-    </div>
+  return h("div",null,
+    h(Home,{trips,showNew,
+      onNew:()=>setShowNew(true),onHide:()=>setShowNew(false),
+      onOpen:id=>{setActiveId(id);setView("trip");},
+      onDel:id=>setTrips(p=>p.filter(t=>t.id!==id)),
+      onCreate:data=>{
+        const t={id:uid(),created:new Date().toISOString().slice(0,10),items:[],cRates:{},...data};
+        setTrips(p=>[t,...p]);setActiveId(t.id);setShowNew(false);setView("trip");
+      },
+      hasKey:!!apiKey,onKey:()=>setShowApi(true)
+    }),
+    showApi&&h(ApiSetup,{cur:apiKey,onSave:k=>{saveKey(k);setShowApi(false);},onClose:()=>setShowApi(false)})
   );
 }
 
-/* ── Home Screen ── */
-function HomeScreen({trips,showNew,onShowNew,onHideNew,onCreateTrip,onOpenTrip,onDeleteTrip,hasApiKey,onApiSetup}){
-  const [name,setName]=useState("");
-  const [emoji,setEmoji]=useState("✈️");
-  const [members,setMembers]=useState([""]);
-  const [confirmDeleteId,setConfirmDeleteId]=useState(null);
-  const total=t=>t.items.reduce((s,i)=>s+(i.total||0),0);
-  const handleCreate=()=>{
+/* ── API Key Setup ── */
+function ApiSetup({cur,onSave,onClose}){
+  const[k,setK]=useState(cur);
+  const o={position:"fixed",inset:0,background:"rgba(0,0,0,.65)",zIndex:200,display:"flex",alignItems:"flex-end"};
+  const b={width:"100%",background:"#fff",borderRadius:"20px 20px 0 0",padding:24,paddingBottom:40};
+  return h("div",{style:o},
+    h("div",{style:b},
+      h("div",{style:{fontWeight:700,fontSize:17,color:"#1e293b",marginBottom:6}},"Anthropic API Key"),
+      h("div",{style:{fontSize:12,color:"#64748b",lineHeight:1.7,marginBottom:16}},
+        "前往 ",h("a",{href:"https://console.anthropic.com",target:"_blank",style:{color:"#0ea5e9"}},"console.anthropic.com")," 取得 Key，僅存本機。"),
+      h("input",{type:"password",value:k,onChange:e=>setK(e.target.value),placeholder:"sk-ant-...",
+        style:{width:"100%",border:"1.5px solid #e2e8f0",borderRadius:12,padding:"12px 14px",fontSize:14,outline:"none",marginBottom:16,fontFamily:"monospace"}}),
+      h("div",{style:{display:"flex",gap:10}},
+        h("button",{onClick:onClose,style:{flex:1,padding:"12px 0",border:"1.5px solid #e2e8f0",borderRadius:12,background:"#fff",color:"#64748b",fontWeight:600,fontSize:14,cursor:"pointer"}},"取消"),
+        h("button",{onClick:()=>onSave(k.trim()),disabled:!k.trim(),
+          style:{flex:2,padding:"12px 0",border:"none",borderRadius:12,background:k.trim()?"#1e293b":"#e2e8f0",color:k.trim()?"#fff":"#94a3b8",fontWeight:700,fontSize:14,cursor:"pointer"}},"儲存")
+      )
+    )
+  );
+}
+
+/* ── Home ── */
+function Home({trips,showNew,onNew,onHide,onOpen,onDel,onCreate,hasKey,onKey}){
+  const[name,setName]=useState("");
+  const[emoji,setEmoji]=useState("✈️");
+  const[members,setMembers]=useState([""]);
+  const[delId,setDelId]=useState(null);
+  const tot=t=>t.items.reduce((s,i)=>s+(i.total||0),0);
+  const create=()=>{
     if(!name.trim())return;
     const ms=members.filter(m=>m.trim()).map(m=>m.trim());
-    onCreateTrip({name:name.trim(),emoji,members:ms.length?ms:["我"]});
+    onCreate({name:name.trim(),emoji,members:ms.length?ms:["我"]});
     setName("");setEmoji("✈️");setMembers([""]);
   };
-  return(
-    <div style={{background:"#f0f4f8",minHeight:"100vh"}}>
-      <div style={{background:"#1e293b",padding:"48px 20px 20px"}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-          <div>
-            <div style={{color:"#94a3b8",fontSize:11,letterSpacing:1,textTransform:"uppercase"}}>旅遊記帳</div>
-            <div style={{color:"#f1f5f9",fontSize:24,fontWeight:800,marginTop:4}}>我的行程</div>
-          </div>
-          <div style={{display:"flex",gap:8,alignItems:"center"}}>
-            <button onClick={onApiSetup} title={hasApiKey?"更換 API Key":"設定 API Key"}
-              style={{background:"rgba(255,255,255,.1)",border:"none",borderRadius:10,padding:"8px 12px",
-                color:hasApiKey?"#34d399":"#f59e0b",fontSize:13,cursor:"pointer",fontWeight:600}}>
-              {hasApiKey?"🔑 Key 已設定":"🔑 設定 Key"}
-            </button>
-            {!showNew&&<button onClick={onShowNew}
-              style={{background:"#38bdf8",border:"none",borderRadius:12,padding:"10px 18px",
-                color:"#0f172a",fontWeight:700,fontSize:15,cursor:"pointer"}}>+ 新行程</button>}
-          </div>
-        </div>
-      </div>
+  const S={hd:{background:"#1e293b",padding:"48px 20px 20px"},
+    row:{display:"flex",justifyContent:"space-between",alignItems:"center"},
+    label:{color:"#94a3b8",fontSize:11,letterSpacing:1,textTransform:"uppercase"},
+    title:{color:"#f1f5f9",fontSize:24,fontWeight:800,marginTop:4}};
 
-      {showNew&&(
-        <div style={{margin:"16px 16px 0",background:"#fff",borderRadius:20,padding:18,boxShadow:"0 2px 8px rgba(0,0,0,.08)"}}>
-          <div style={{fontWeight:700,color:"#1e293b",fontSize:16,marginBottom:14}}>建立新行程</div>
-          <div style={{fontSize:12,color:"#94a3b8",fontWeight:600,marginBottom:8}}>圖示</div>
-          <div style={{display:"flex",flexWrap:"wrap",gap:4,marginBottom:14}}>
-            {EMOJIS.map(e=>(
-              <button key={e} onClick={()=>setEmoji(e)}
-                style={{fontSize:20,padding:"4px 5px",borderRadius:8,border:"2px solid",
-                  borderColor:emoji===e?"#38bdf8":"transparent",
-                  background:emoji===e?"#f0f9ff":"transparent",cursor:"pointer"}}>{e}</button>
-            ))}
-          </div>
-          <div style={{fontSize:12,color:"#94a3b8",fontWeight:600,marginBottom:6}}>行程名稱</div>
-          <input autoFocus value={name} onChange={e=>setName(e.target.value)} placeholder="例：9月名古屋行"
-            style={{width:"100%",border:"1.5px solid #e2e8f0",borderRadius:12,padding:"10px 14px",
-              fontSize:15,outline:"none",marginBottom:14,color:"#1e293b"}}/>
-          <div style={{fontSize:12,color:"#94a3b8",fontWeight:600,marginBottom:8}}>成員</div>
-          {members.map((m,i)=>(
-            <div key={i} style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
-              <div style={{width:8,height:8,borderRadius:"50%",background:COLORS[i%COLORS.length],flexShrink:0}}/>
-              <input value={m} onChange={e=>setMembers(prev=>prev.map((x,j)=>j===i?e.target.value:x))}
-                placeholder={`例：${["爸爸","媽媽","小寶","阿嬤","朋友A"][i]||`成員${i+1}`}`}
-                style={{flex:1,border:"1.5px solid #e2e8f0",borderRadius:10,padding:"8px 12px",fontSize:14,outline:"none",color:"#1e293b"}}/>
-              {members.length>1&&<button onClick={()=>setMembers(prev=>prev.filter((_,j)=>j!==i))}
-                style={{background:"none",border:"none",color:"#94a3b8",fontSize:18,cursor:"pointer"}}>×</button>}
-            </div>
-          ))}
-          <button onClick={()=>setMembers(prev=>[...prev,""])}
-            style={{color:"#38bdf8",background:"none",border:"1.5px dashed #bae6fd",borderRadius:10,
-              padding:"6px 14px",fontSize:13,cursor:"pointer",marginBottom:16,width:"100%"}}>+ 新增成員</button>
-          <div style={{display:"flex",gap:10}}>
-            <button onClick={onHideNew}
-              style={{flex:1,padding:"12px 0",border:"1.5px solid #e2e8f0",borderRadius:12,
-                background:"#fff",color:"#64748b",fontWeight:600,fontSize:14,cursor:"pointer"}}>取消</button>
-            <button onClick={handleCreate} disabled={!name.trim()}
-              style={{flex:2,padding:"12px 0",border:"none",borderRadius:12,
-                background:name.trim()?"#1e293b":"#e2e8f0",
-                color:name.trim()?"#fff":"#94a3b8",fontWeight:700,fontSize:14,cursor:"pointer"}}>建立行程</button>
-          </div>
-        </div>
-      )}
-
-      <div style={{padding:"16px 16px 40px"}}>
-        {trips.length===0&&!showNew&&(
-          <div style={{textAlign:"center",padding:"64px 0",color:"#94a3b8"}}>
-            <div style={{fontSize:48,marginBottom:12}}>✈️</div>
-            <div style={{fontSize:16,fontWeight:600,marginBottom:6}}>尚無行程</div>
-            <div style={{fontSize:13}}>點右上角「+ 新行程」開始記帳</div>
-          </div>
-        )}
-        {trips.map(trip=>(
-          <div key={trip.id} style={{background:"#fff",borderRadius:18,marginBottom:12,
-            boxShadow:"0 1px 4px rgba(0,0,0,.06)",overflow:"hidden"}}>
-            <div onClick={()=>{setConfirmDeleteId(null);onOpenTrip(trip.id);}}
-              style={{padding:"16px 18px",display:"flex",alignItems:"center",cursor:"pointer"}}>
-              <div style={{fontSize:36,marginRight:14,lineHeight:1}}>{trip.emoji}</div>
-              <div style={{flex:1,minWidth:0}}>
-                <div style={{fontWeight:700,color:"#1e293b",fontSize:16}}>{trip.name}</div>
-                <div style={{color:"#94a3b8",fontSize:12,marginTop:3}}>{trip.members.join(" · ")}　·　{trip.items.length} 筆</div>
-                <div style={{color:"#cbd5e1",fontSize:11,marginTop:2}}>{trip.createdAt}</div>
-              </div>
-              <div style={{fontWeight:800,color:"#1e293b",fontSize:18}}>NT${Math.round(total(trip)).toLocaleString()}</div>
-            </div>
-            <div style={{borderTop:"1px solid #f8fafc",padding:"8px 18px",display:"flex",justifyContent:"flex-end",gap:10}}>
-              {confirmDeleteId===trip.id?(
-                <>
-                  <span style={{fontSize:12,color:"#64748b",alignSelf:"center"}}>確定刪除？</span>
-                  <button onClick={()=>setConfirmDeleteId(null)}
-                    style={{fontSize:12,color:"#64748b",background:"none",border:"1px solid #e2e8f0",borderRadius:8,padding:"4px 12px",cursor:"pointer"}}>取消</button>
-                  <button onClick={()=>{onDeleteTrip(trip.id);setConfirmDeleteId(null);}}
-                    style={{fontSize:12,color:"#fff",background:"#ef4444",border:"none",borderRadius:8,padding:"4px 12px",cursor:"pointer",fontWeight:600}}>刪除</button>
-                </>
-              ):(
-                <button onClick={e=>{e.stopPropagation();setConfirmDeleteId(trip.id);}}
-                  style={{fontSize:12,color:"#fca5a5",background:"none",border:"none",cursor:"pointer"}}>刪除行程</button>
-              )}
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
+  return h("div",{style:{background:"#f0f4f8",minHeight:"100vh"}},
+    h("div",{style:S.hd},
+      h("div",{style:S.row},
+        h("div",null,h("div",{style:S.label},"旅遊記帳"),h("div",{style:S.title},"我的行程")),
+        h("div",{style:{display:"flex",gap:8,alignItems:"center"}},
+          h("button",{onClick:onKey,style:{background:"rgba(255,255,255,.1)",border:"none",borderRadius:10,padding:"8px 12px",color:hasKey?"#34d399":"#f59e0b",fontSize:13,cursor:"pointer",fontWeight:600}},hasKey?"🔑 Key 已設定":"🔑 設定 Key"),
+          !showNew&&h("button",{onClick:onNew,style:{background:"#38bdf8",border:"none",borderRadius:12,padding:"10px 18px",color:"#0f172a",fontWeight:700,fontSize:15,cursor:"pointer"}},"+ 新行程")
+        )
+      )
+    ),
+    showNew&&h("div",{style:{margin:"16px 16px 0",background:"#fff",borderRadius:20,padding:18,boxShadow:"0 2px 8px rgba(0,0,0,.08)"}},
+      h("div",{style:{fontWeight:700,color:"#1e293b",fontSize:16,marginBottom:14}},"建立新行程"),
+      h("div",{style:{fontSize:12,color:"#94a3b8",fontWeight:600,marginBottom:8}},"圖示"),
+      h("div",{style:{display:"flex",flexWrap:"wrap",gap:4,marginBottom:14}},
+        EMOJIS.map(e=>h("button",{key:e,onClick:()=>setEmoji(e),style:{fontSize:20,padding:"4px 5px",borderRadius:8,border:"2px solid",borderColor:emoji===e?"#38bdf8":"transparent",background:emoji===e?"#f0f9ff":"transparent",cursor:"pointer"}},e))
+      ),
+      h("div",{style:{fontSize:12,color:"#94a3b8",fontWeight:600,marginBottom:6}},"行程名稱"),
+      h("input",{autoFocus:true,value:name,onChange:e=>setName(e.target.value),placeholder:"例：9月名古屋行",
+        style:{width:"100%",border:"1.5px solid #e2e8f0",borderRadius:12,padding:"10px 14px",fontSize:15,outline:"none",marginBottom:14,color:"#1e293b"}}),
+      h("div",{style:{fontSize:12,color:"#94a3b8",fontWeight:600,marginBottom:8}},"成員"),
+      members.map((m,i)=>h("div",{key:i,style:{display:"flex",alignItems:"center",gap:8,marginBottom:8}},
+        h("div",{style:{width:8,height:8,borderRadius:"50%",background:COLORS[i%COLORS.length],flexShrink:0}}),
+        h("input",{value:m,onChange:e=>setMembers(p=>p.map((x,j)=>j===i?e.target.value:x)),
+          placeholder:["爸爸","媽媽","小寶","阿嬤","朋友A"][i]||`成員${i+1}`,
+          style:{flex:1,border:"1.5px solid #e2e8f0",borderRadius:10,padding:"8px 12px",fontSize:14,outline:"none",color:"#1e293b"}}),
+        members.length>1&&h("button",{onClick:()=>setMembers(p=>p.filter((_,j)=>j!==i)),style:{background:"none",border:"none",color:"#94a3b8",fontSize:18,cursor:"pointer"}},"×")
+      )),
+      h("button",{onClick:()=>setMembers(p=>[...p,""]),style:{color:"#38bdf8",background:"none",border:"1.5px dashed #bae6fd",borderRadius:10,padding:"6px 14px",fontSize:13,cursor:"pointer",marginBottom:16,width:"100%"}},"+ 新增成員"),
+      h("div",{style:{display:"flex",gap:10}},
+        h("button",{onClick:onHide,style:{flex:1,padding:"12px 0",border:"1.5px solid #e2e8f0",borderRadius:12,background:"#fff",color:"#64748b",fontWeight:600,fontSize:14,cursor:"pointer"}},"取消"),
+        h("button",{onClick:create,disabled:!name.trim(),style:{flex:2,padding:"12px 0",border:"none",borderRadius:12,background:name.trim()?"#1e293b":"#e2e8f0",color:name.trim()?"#fff":"#94a3b8",fontWeight:700,fontSize:14,cursor:"pointer"}},"建立行程")
+      )
+    ),
+    h("div",{style:{padding:"16px 16px 40px"}},
+      trips.length===0&&!showNew&&h("div",{style:{textAlign:"center",padding:"64px 0",color:"#94a3b8"}},
+        h("div",{style:{fontSize:48,marginBottom:12}},"✈️"),
+        h("div",{style:{fontSize:16,fontWeight:600,marginBottom:6}},"尚無行程"),
+        h("div",{style:{fontSize:13}},"點右上角「+ 新行程」開始記帳")
+      ),
+      trips.map(trip=>h("div",{key:trip.id,style:{background:"#fff",borderRadius:18,marginBottom:12,boxShadow:"0 1px 4px rgba(0,0,0,.06)",overflow:"hidden"}},
+        h("div",{onClick:()=>{setDelId(null);onOpen(trip.id);},style:{padding:"16px 18px",display:"flex",alignItems:"center",cursor:"pointer"}},
+          h("div",{style:{fontSize:36,marginRight:14,lineHeight:1}},trip.emoji),
+          h("div",{style:{flex:1,minWidth:0}},
+            h("div",{style:{fontWeight:700,color:"#1e293b",fontSize:16}},trip.name),
+            h("div",{style:{color:"#94a3b8",fontSize:12,marginTop:3}},trip.members.join(" · ")+"　·　"+trip.items.length+" 筆"),
+            h("div",{style:{color:"#cbd5e1",fontSize:11,marginTop:2}},trip.created)
+          ),
+          h("div",{style:{fontWeight:800,color:"#1e293b",fontSize:18}},"NT$"+Math.round(tot(trip)).toLocaleString())
+        ),
+        h("div",{style:{borderTop:"1px solid #f8fafc",padding:"8px 18px",display:"flex",justifyContent:"flex-end",gap:10}},
+          delId===trip.id
+            ?h("div",{style:{display:"flex",gap:8,alignItems:"center"}},
+                h("span",{style:{fontSize:12,color:"#64748b"}},"確定刪除？"),
+                h("button",{onClick:()=>setDelId(null),style:{fontSize:12,color:"#64748b",background:"none",border:"1px solid #e2e8f0",borderRadius:8,padding:"4px 12px",cursor:"pointer"}},"取消"),
+                h("button",{onClick:()=>{onDel(trip.id);setDelId(null);},style:{fontSize:12,color:"#fff",background:"#ef4444",border:"none",borderRadius:8,padding:"4px 12px",cursor:"pointer",fontWeight:600}},"刪除")
+              )
+            :h("button",{onClick:e=>{e.stopPropagation();setDelId(trip.id);},style:{fontSize:12,color:"#fca5a5",background:"none",border:"none",cursor:"pointer"}},"刪除行程")
+        )
+      ))
+    )
   );
 }
 
-/* ── Trip Screen ── */
-function TripScreen({trip,liveRates,rateDate,apiKey,onBack,onUpdateTrip,onNeedApiKey}){
-  const [currency,setCurrency]=useState("JPY");
-  const [amount,setAmount]=useState("");
-  const [itemName,setItemName]=useState("");
-  const [payMethod,setPayMethod]=useState("cash");
-  const [feeRate,setFeeRate]=useState("1.5");
-  const [paidBy,setPaidBy]=useState(trip.members[0]||"我");
-  const [editingRate,setEditingRate]=useState(false);
-  const [rateInput,setRateInput]=useState("");
-  const [displayInverted,setDisplayInverted]=useState(false);
-  const [scanning,setScanning]=useState(false);
-  const [scanMsg,setScanMsg]=useState("");
-  const [showTextScan,setShowTextScan]=useState(false);
-  const [receiptText,setReceiptText]=useState("");
-  const [textScanLoading,setTextScanLoading]=useState(false);
-  const [clearConfirm,setClearConfirm]=useState(false);
-  const [editingItemId,setEditingItemId]=useState(null);
-  const [editName,setEditName]=useState("");
-  const [editAmount,setEditAmount]=useState("");
-  const fileRef=useRef();
-  const amountRef=useRef();
-  const rateInputRef=useRef();
+/* ── Trip ── */
+function Trip({trip,rates,rateDate,apiKey,onBack,onUpd,onNeedKey}){
+  const[cur,setCur]=useState("JPY");
+  const[amt,setAmt]=useState("");
+  const[iName,setIName]=useState("");
+  const[pay,setPay]=useState("cash");
+  const[fee,setFee]=useState("1.5");
+  const[by,setBy]=useState(trip.members[0]||"我");
+  const[editR,setEditR]=useState(false);
+  const[rIn,setRIn]=useState("");
+  const[inv,setInv]=useState(false);
+  const[scan,setScan]=useState(false);
+  const[msg,setMsg]=useState("");
+  const[showTxt,setShowTxt]=useState(false);
+  const[txt,setTxt]=useState("");
+  const[txLoading,setTxL]=useState(false);
+  const[clr,setClr]=useState(false);
+  const[eId,setEId]=useState(null);
+  const[eName,setEN]=useState("");
+  const[eAmt,setEA]=useState("");
+  const fRef=useRef();const aRef=useRef();const rRef=useRef();
 
-  const liveRate=liveRates[currency];
-  const effectiveRate=trip.customRates?.[currency]??liveRate;
-  const isCustom=trip.customRates?.[currency]!=null;
-  const displayRate=effectiveRate?(displayInverted?1/effectiveRate:effectiveRate):null;
-  const displayLive=liveRate?(displayInverted?1/liveRate:liveRate):null;
-  const currInfo=CURRENCIES.find(c=>c.code===currency);
-  const parsedAmt=parseFloat(amount);
-  const parsedFee=parseFloat(feeRate)||0;
+  const lr=rates[cur];
+  const er=trip.cRates?.[cur]??lr;
+  const isCust=trip.cRates?.[cur]!=null;
+  const dr=er?(inv?1/er:er):null;
+  const dl=lr?(inv?1/lr:lr):null;
+  const cinfo=ci(cur);
+  const pAmt=parseFloat(amt);const pFee=parseFloat(fee)||0;
 
-  const setCustomRate=r=>onUpdateTrip(t=>({...t,customRates:{...t.customRates,[currency]:r}}));
-  const clearCustomRate=()=>onUpdateTrip(t=>{const c={...t.customRates};delete c[currency];return{...t,customRates:c};});
-  const openRateEdit=()=>{setRateInput(displayRate!=null?fmtRate(displayRate):"");setEditingRate(true);setTimeout(()=>rateInputRef.current?.focus(),50);};
-  const confirmRate=()=>{const v=parseFloat(rateInput);if(!isNaN(v)&&v>0)setCustomRate(displayInverted?1/v:v);setEditingRate(false);};
-  const toggleDirection=()=>{if(editingRate&&rateInput){const v=parseFloat(rateInput);if(!isNaN(v)&&v>0)setRateInput(fmtRate(1/v));}setDisplayInverted(p=>!p);};
+  const setCR=r=>onUpd(t=>({...t,cRates:{...t.cRates,[cur]:r}}));
+  const clrCR=()=>onUpd(t=>{const c={...t.cRates};delete c[cur];return{...t,cRates:c};});
+  const openR=()=>{setRIn(dr!=null?fmtR(dr):"");setEditR(true);setTimeout(()=>rRef.current?.focus(),50);};
+  const confR=()=>{const v=parseFloat(rIn);if(!isNaN(v)&&v>0)setCR(inv?1/v:v);setEditR(false);};
+  const togDir=()=>{if(editR&&rIn){const v=parseFloat(rIn);if(!isNaN(v)&&v>0)setRIn(fmtR(1/v));}setInv(p=>!p);};
 
-  const calcTotals=(baseTWD,method)=>{const fee=method==="card"?Math.round(baseTWD*parsedFee/100):0;return{fee,total:Math.round(baseTWD)+fee};};
-  const previewBase=!isNaN(parsedAmt)&&parsedAmt>0&&effectiveRate?Math.round(parsedAmt*effectiveRate):null;
-  const previewFee=previewBase!==null&&payMethod==="card"?Math.round(previewBase*parsedFee/100):0;
-  const previewTotal=previewBase!==null?previewBase+previewFee:null;
+  const calc=(base,method)=>{const f=method==="card"?Math.round(base*pFee/100):0;return{fee:f,total:Math.round(base)+f};};
+  const pBase=!isNaN(pAmt)&&pAmt>0&&er?Math.round(pAmt*er):null;
+  const pFeeV=pBase!==null&&pay==="card"?Math.round(pBase*pFee/100):0;
+  const pTot=pBase!==null?pBase+pFeeV:null;
 
-  const addItem=()=>{
-    if(!parsedAmt||parsedAmt<=0||!effectiveRate)return;
-    const baseTWD=parsedAmt*effectiveRate;
-    const{fee,total}=calcTotals(baseTWD,payMethod);
-    onUpdateTrip(t=>({...t,items:[...t.items,{id:uid(),name:itemName.trim()||"品項",amount:parsedAmt,currency,twd:Math.round(baseTWD),payMethod,fee,total,paidBy,datetime:new Date().toISOString()}]}));
-    setItemName("");setAmount("");setTimeout(()=>amountRef.current?.focus(),50);
+  const add=()=>{
+    if(!pAmt||pAmt<=0||!er)return;
+    const base=pAmt*er;const{fee:f,total:tot}=calc(base,pay);
+    onUpd(t=>({...t,items:[...t.items,{id:uid(),name:iName.trim()||"品項",amount:pAmt,currency:cur,twd:Math.round(base),payMethod:pay,fee:f,total:tot,paidBy:by,datetime:new Date().toISOString()}]}));
+    setIName("");setAmt("");setTimeout(()=>aRef.current?.focus(),50);
   };
-  const removeItem=id=>onUpdateTrip(t=>({...t,items:t.items.filter(i=>i.id!==id)}));
-  const startEdit=item=>{setEditingItemId(item.id);setEditName(item.name);setEditAmount(item.amount.toString());};
-  const cancelEdit=()=>setEditingItemId(null);
-  const saveEdit=item=>{
-    const newAmt=parseFloat(editAmount);if(isNaN(newAmt)||newAmt<=0){cancelEdit();return;}
-    const itemRate=trip.customRates?.[item.currency]??liveRates[item.currency];
-    if(!itemRate){cancelEdit();return;}
-    const baseTWD=newAmt*itemRate;const fee=item.payMethod==="card"?Math.round(baseTWD*parsedFee/100):0;
-    onUpdateTrip(t=>({...t,items:t.items.map(i=>i.id===item.id?{...i,name:editName.trim()||i.name,amount:newAmt,twd:Math.round(baseTWD),fee,total:Math.round(baseTWD)+fee}:i)}));
-    setEditingItemId(null);
+  const del=id=>onUpd(t=>({...t,items:t.items.filter(i=>i.id!==id)}));
+  const startE=item=>{setEId(item.id);setEN(item.name);setEA(item.amount.toString());};
+  const cancelE=()=>setEId(null);
+  const saveE=item=>{
+    const na=parseFloat(eAmt);if(isNaN(na)||na<=0){cancelE();return;}
+    const ir=trip.cRates?.[item.currency]??rates[item.currency];if(!ir){cancelE();return;}
+    const base=na*ir;const f=item.payMethod==="card"?Math.round(base*pFee/100):0;
+    onUpd(t=>({...t,items:t.items.map(i=>i.id===item.id?{...i,name:eName.trim()||i.name,amount:na,twd:Math.round(base),fee:f,total:Math.round(base)+f}:i)}));
+    setEId(null);
   };
 
-  // Shared Claude API call (text only)
-  const callClaude=async prompt=>{
-    if(!apiKey){onNeedApiKey();throw new Error("請先設定 API Key");}
-    const resp=await fetch("https://api.anthropic.com/v1/messages",{
+  const callAPI=async(messages)=>{
+    if(!apiKey){onNeedKey();throw new Error("請先設定 API Key");}
+    const r=await fetch("https://api.anthropic.com/v1/messages",{
       method:"POST",
       headers:{"Content-Type":"application/json","x-api-key":apiKey,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
-      body:JSON.stringify({model:"claude-sonnet-4-6",max_tokens:1000,messages:[{role:"user",content:prompt}]})
+      body:JSON.stringify({model:"claude-sonnet-4-6",max_tokens:1000,messages})
     });
-    const body=await resp.text();
-    let data;try{data=JSON.parse(body);}catch{throw new Error(`回應格式錯誤: ${body.slice(0,60)}`);}
-    if(data.error)throw new Error(`API: ${data.error.message}`);
-    return(data.content||[]).map(c=>c.text||"").join("");
+    const body=await r.text();
+    let d;try{d=JSON.parse(body);}catch{throw new Error("回應格式錯誤: "+body.slice(0,60));}
+    if(d.error)throw new Error("API: "+d.error.message);
+    return(d.content||[]).map(c=>c.text||"").join("");
   };
 
-  const parseReceiptText=async text=>{
-    const reply=await callClaude(`以下是收據文字，辨識所有品項名稱（翻譯成繁體中文）、金額與貨幣(JPY/CNY/KRW/USD/HKD/EUR)。只回覆JSON：{"currency":"KRW","items":[{"name":"品名","amount":1234}]}\n\n${text}`);
+  const parseItems=async txt=>{
+    const reply=await callAPI([{role:"user",content:`以下是收據文字，辨識所有品項名稱（翻譯成繁體中文）、金額與貨幣(JPY/CNY/KRW/USD/HKD/EUR)。只回覆JSON：{"currency":"KRW","items":[{"name":"品名","amount":1234}]}\n\n${txt}`}]);
     const m=reply.match(/\{[\s\S]*\}/);if(!m)throw new Error("格式解析失敗");
-    const parsed=JSON.parse(m[0]);
-    const det=parsed.currency?.toUpperCase();
-    const useCur=CURRENCIES.find(c=>c.code===det)?det:currency;
-    const useRate=trip.customRates?.[useCur]??liveRates[useCur]??effectiveRate;
-    if(parsed.items?.length>0){
-      if(CURRENCIES.find(c=>c.code===det))setCurrency(det);
-      const newItems=parsed.items.map(item=>{
-        const baseTWD=useRate?item.amount*useRate:0;const{fee,total}=calcTotals(baseTWD,payMethod);
-        return{id:uid(),name:item.name||"未知品項",amount:item.amount,currency:useCur,twd:Math.round(baseTWD),payMethod,fee,total,paidBy,datetime:new Date().toISOString()};
-      });
-      onUpdateTrip(t=>({...t,items:[...t.items,...newItems]}));
-      return parsed.items.length;
-    }
-    return 0;
+    const p=JSON.parse(m[0]);
+    const dc=p.currency?.toUpperCase();
+    const uc=CUR.find(c=>c.code===dc)?dc:cur;
+    const ur=trip.cRates?.[uc]??rates[uc]??er;
+    if(p.items?.length>0){
+      if(CUR.find(c=>c.code===dc))setCur(dc);
+      const ni=p.items.map(item=>{const base=ur?item.amount*ur:0;const{fee:f,total:tot}=calc(base,pay);return{id:uid(),name:item.name||"未知品項",amount:item.amount,currency:uc,twd:Math.round(base),payMethod:pay,fee:f,total:tot,paidBy:by,datetime:new Date().toISOString()};});
+      onUpd(t=>({...t,items:[...t.items,...ni]}));return p.items.length;
+    }return 0;
   };
 
-  const handleScan=async e=>{
+  const doScan=async e=>{
     const file=e.target.files[0];if(!file)return;
-    if(!apiKey){onNeedApiKey();e.target.value="";return;}
-    setScanMsg("");setScanning(true);
+    if(!apiKey){onNeedKey();e.target.value="";return;}
+    setMsg("");setScan(true);
     try{
-      setScanMsg("⏳ 壓縮圖片…");
-      const base64=await compressImg(file);
-      setScanMsg("⏳ AI 辨識收據…");
-      const reply=await(async()=>{
-        const resp=await fetch("https://api.anthropic.com/v1/messages",{
-          method:"POST",
-          headers:{"Content-Type":"application/json","x-api-key":apiKey,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
-          body:JSON.stringify({model:"claude-sonnet-4-6",max_tokens:1000,messages:[{role:"user",content:[
-            {type:"image",source:{type:"base64",media_type:"image/jpeg",data:base64}},
-            {type:"text",text:`收據照片，辨識所有品項名稱（翻譯成繁體中文）、金額與貨幣(JPY/CNY/KRW/USD/HKD/EUR)。只回覆JSON：{"currency":"KRW","items":[{"name":"品名","amount":1234}]}`}
-          ]}]})
-        });
-        const body=await resp.text();
-        let data;try{data=JSON.parse(body);}catch{throw new Error(`API 格式錯誤: ${body.slice(0,80)}`);}
-        if(data.error)throw new Error(`API: ${data.error.message}`);
-        return(data.content||[]).map(c=>c.text||"").join("");
-      })();
+      setMsg("⏳ 壓縮圖片…");
+      const b64=await compress(file);
+      setMsg("⏳ AI 辨識收據…");
+      const reply=await callAPI([
+        {role:"user",content:[
+          {type:"image",source:{type:"base64",media_type:"image/jpeg",data:b64}},
+          {type:"text",text:"收據照片，辨識所有品項名稱（翻譯成繁體中文）、金額與貨幣(JPY/CNY/KRW/USD/HKD/EUR)。只回覆JSON：{\"currency\":\"KRW\",\"items\":[{\"name\":\"品名\",\"amount\":1234}]}"}
+        ]}
+      ]);
       const m=reply.match(/\{[\s\S]*\}/);if(!m)throw new Error("格式解析失敗");
-      const parsed=JSON.parse(m[0]);
-      const det=parsed.currency?.toUpperCase();
-      const useCur=CURRENCIES.find(c=>c.code===det)?det:currency;
-      const useRate=trip.customRates?.[useCur]??liveRates[useCur]??effectiveRate;
-      if(parsed.items?.length>0){
-        if(CURRENCIES.find(c=>c.code===det))setCurrency(det);
-        const newItems=parsed.items.map(item=>{
-          const baseTWD=useRate?item.amount*useRate:0;const{fee,total}=calcTotals(baseTWD,payMethod);
-          return{id:uid(),name:item.name||"未知品項",amount:item.amount,currency:useCur,twd:Math.round(baseTWD),payMethod,fee,total,paidBy,datetime:new Date().toISOString()};
-        });
-        onUpdateTrip(t=>({...t,items:[...t.items,...newItems]}));
-        setScanMsg(`✓ 辨識到 ${parsed.items.length} 筆品項`);
-      }else setScanMsg("未辨識到品項，請嘗試更清晰的照片");
-    }catch(err){setScanMsg(`✗ ${err.message}`);}
-    finally{setScanning(false);e.target.value="";}
+      const p=JSON.parse(m[0]);
+      const dc=p.currency?.toUpperCase();
+      const uc=CUR.find(c=>c.code===dc)?dc:cur;
+      const ur=trip.cRates?.[uc]??rates[uc]??er;
+      if(p.items?.length>0){
+        if(CUR.find(c=>c.code===dc))setCur(dc);
+        const ni=p.items.map(item=>{const base=ur?item.amount*ur:0;const{fee:f,total:tot}=calc(base,pay);return{id:uid(),name:item.name||"未知品項",amount:item.amount,currency:uc,twd:Math.round(base),payMethod:pay,fee:f,total:tot,paidBy:by,datetime:new Date().toISOString()};});
+        onUpd(t=>({...t,items:[...t.items,...ni]}));
+        setMsg("✓ 辨識到 "+ni.length+" 筆品項");
+      }else setMsg("未辨識到品項");
+    }catch(err){setMsg("✗ "+err.message);}
+    finally{setScan(false);e.target.value="";}
   };
 
-  const handleTextScan=async()=>{
-    if(!receiptText.trim())return;
-    setTextScanLoading(true);
-    try{
-      const count=await parseReceiptText(receiptText);
-      if(count>0){setReceiptText("");setShowTextScan(false);setScanMsg(`✓ 辨識到 ${count} 筆品項`);}
-      else setScanMsg("未辨識到品項");
-    }catch(err){setScanMsg(`✗ ${err.message}`);}
-    finally{setTextScanLoading(false);}
+  const doTxt=async()=>{
+    if(!txt.trim())return;setTxL(true);
+    try{const n=await parseItems(txt);if(n>0){setTxt("");setShowTxt(false);setMsg("✓ 辨識到 "+n+" 筆品項");}else setMsg("未辨識到品項");}
+    catch(err){setMsg("✗ "+err.message);}finally{setTxL(false);}
   };
 
-  const cashTotal=trip.items.filter(i=>i.payMethod==="cash").reduce((s,i)=>s+i.total,0);
-  const cardBase=trip.items.filter(i=>i.payMethod==="card").reduce((s,i)=>s+i.twd,0);
-  const cardFee=trip.items.filter(i=>i.payMethod==="card").reduce((s,i)=>s+i.fee,0);
-  const cardTotal=cardBase+cardFee;
-  const grandTotal=cashTotal+cardTotal;
+  const cashT=trip.items.filter(i=>i.payMethod==="cash").reduce((s,i)=>s+i.total,0);
+  const cardB=trip.items.filter(i=>i.payMethod==="card").reduce((s,i)=>s+i.twd,0);
+  const cardF=trip.items.filter(i=>i.payMethod==="card").reduce((s,i)=>s+i.fee,0);
+  const cardT=cardB+cardF;const grand=cashT+cardT;
   const hasCash=trip.items.some(i=>i.payMethod==="cash");
   const hasCard=trip.items.some(i=>i.payMethod==="card");
-  const byCurrency=trip.items.reduce((acc,i)=>{acc[i.currency]=(acc[i.currency]||0)+i.amount;return acc;},{});
-  const byMember=trip.members.reduce((acc,m)=>{acc[m]=trip.items.filter(i=>i.paidBy===m).reduce((s,i)=>s+i.total,0);return acc;},{});
+  const byC=trip.items.reduce((a,i)=>{a[i.currency]=(a[i.currency]||0)+i.amount;return a;},{});
+  const byM=trip.members.reduce((a,m)=>{a[m]=trip.items.filter(i=>i.paidBy===m).reduce((s,i)=>s+i.total,0);return a;},{});
 
-  return(
-    <div style={{background:"#f0f4f8",minHeight:"100vh"}}>
-      {/* Header */}
-      <div style={{background:"#1e293b",padding:"20px 16px 0",position:"sticky",top:0,zIndex:10}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:6}}>
-          <button onClick={onBack} style={{background:"none",border:"none",color:"#38bdf8",fontSize:15,cursor:"pointer",padding:0,fontWeight:600}}>‹ 返回</button>
-          {trip.items.length>0&&(
-            <div style={{textAlign:"right"}}>
-              <div style={{color:"#64748b",fontSize:11}}>{trip.items.length} 筆 · 合計</div>
-              <div style={{color:"#34d399",fontSize:20,fontWeight:800,letterSpacing:-.5}}>NT${grandTotal.toLocaleString()}</div>
-            </div>
-          )}
-        </div>
-        <div style={{color:"#f1f5f9",fontSize:18,fontWeight:700,marginBottom:12}}>{trip.emoji} {trip.name}</div>
-        <div style={{display:"flex",gap:8,overflowX:"auto",paddingBottom:14}}>
-          {CURRENCIES.map(c=>(
-            <button key={c.code} onClick={()=>setCurrency(c.code)}
-              style={{flexShrink:0,padding:"6px 14px",borderRadius:999,border:"none",
-                background:currency===c.code?"#38bdf8":"rgba(255,255,255,.08)",
-                color:currency===c.code?"#0f172a":"#94a3b8",
-                fontWeight:currency===c.code?700:500,fontSize:13,cursor:"pointer"}}>{c.flag} {c.name}</button>
-          ))}
-        </div>
-      </div>
+  const btn=(label,onClick,style)=>h("button",{onClick,style:{border:"none",cursor:"pointer",...style}},label);
+  const S={hd:{background:"#1e293b",padding:"20px 16px 0",position:"sticky",top:0,zIndex:10}};
 
-      {/* Rate strip */}
-      <div style={{background:"#0f172a",padding:"8px 14px"}}>
-        {editingRate?(
-          <div style={{display:"flex",alignItems:"center",gap:6,justifyContent:"center",flexWrap:"wrap"}}>
-            {!displayInverted?(
-              <><span style={{color:"#38bdf8",fontSize:13,fontWeight:600}}>1 {currInfo?.symbol} ({currency}) ＝ NT$</span>
-              <input ref={rateInputRef} type="number" inputMode="decimal" value={rateInput} onChange={e=>setRateInput(e.target.value)} onKeyDown={e=>e.key==="Enter"&&confirmRate()} placeholder={liveRate?fmtRate(liveRate):""}
-                style={{width:80,background:"#1e293b",border:"1.5px solid #38bdf8",borderRadius:8,padding:"4px 8px",color:"#f1f5f9",fontSize:15,fontWeight:700,outline:"none",textAlign:"center"}}/></>
-            ):(
-              <><span style={{color:"#38bdf8",fontSize:13,fontWeight:600}}>NT$1 ＝</span>
-              <input ref={rateInputRef} type="number" inputMode="decimal" value={rateInput} onChange={e=>setRateInput(e.target.value)} onKeyDown={e=>e.key==="Enter"&&confirmRate()} placeholder={liveRate?fmtRate(1/liveRate):""}
-                style={{width:80,background:"#1e293b",border:"1.5px solid #38bdf8",borderRadius:8,padding:"4px 8px",color:"#f1f5f9",fontSize:15,fontWeight:700,outline:"none",textAlign:"center"}}/>
-              <span style={{color:"#38bdf8",fontSize:13,fontWeight:600}}>{currInfo?.symbol} ({currency})</span></>
-            )}
-            <button onClick={toggleDirection} style={{background:"rgba(255,255,255,.1)",border:"none",borderRadius:6,padding:"4px 8px",color:"#94a3b8",fontSize:14,cursor:"pointer"}}>⇄</button>
-            <button onClick={confirmRate} style={{background:"#38bdf8",color:"#0f172a",border:"none",borderRadius:8,padding:"4px 12px",fontWeight:700,fontSize:13,cursor:"pointer"}}>確定</button>
-            <button onClick={()=>setEditingRate(false)} style={{background:"transparent",color:"#64748b",border:"none",fontSize:18,cursor:"pointer",lineHeight:1,padding:"0 2px"}}>×</button>
-          </div>
-        ):(
-          <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:6,flexWrap:"wrap"}}>
-            {!displayInverted?(
-              <span style={{color:"#38bdf8",fontSize:13,fontWeight:600}}>1 {currInfo?.symbol} ({currency})　＝　<span style={{color:"#f1f5f9"}}>NT$ {fmtRate(displayRate)}</span></span>
-            ):(
-              <span style={{color:"#38bdf8",fontSize:13,fontWeight:600}}>NT$1　＝　<span style={{color:"#f1f5f9"}}>{fmtRate(displayRate)} {currInfo?.symbol} ({currency})</span></span>
-            )}
-            <button onClick={toggleDirection} style={{background:"rgba(255,255,255,.08)",border:"none",borderRadius:6,padding:"2px 7px",color:"#64748b",fontSize:13,cursor:"pointer"}}>⇄</button>
-            {isCustom&&<span style={{fontSize:10,fontWeight:700,padding:"2px 6px",borderRadius:4,background:"#f59e0b",color:"#0f172a"}}>自填</span>}
-            {isCustom&&displayLive!=null&&<span style={{color:"#475569",fontSize:11}}>(即時 {fmtRate(displayLive)})</span>}
-            <button onClick={openRateEdit} style={{background:"rgba(255,255,255,.08)",border:"none",borderRadius:6,padding:"3px 8px",color:"#94a3b8",fontSize:12,cursor:"pointer"}}>✏️ 修改</button>
-            {isCustom&&<button onClick={clearCustomRate} style={{background:"transparent",border:"none",color:"#64748b",fontSize:11,cursor:"pointer",textDecoration:"underline"}}>還原即時</button>}
-          </div>
-        )}
-      </div>
-
-      {/* Input card */}
-      <div style={{padding:"16px 16px 0"}}>
-        <div style={{background:"#fff",borderRadius:20,padding:16,boxShadow:"0 1px 4px rgba(0,0,0,.06)"}}>
-          <input type="text" placeholder="品項名稱（可不填）" value={itemName} onChange={e=>setItemName(e.target.value)}
-            style={{width:"100%",border:"none",borderBottom:"1.5px solid #e2e8f0",padding:"8px 0",fontSize:15,color:"#334155",outline:"none",marginBottom:12,background:"transparent"}}/>
-
-          {/* Payer */}
-          {trip.members.length>0&&(
-            <div style={{marginBottom:12}}>
-              <div style={{fontSize:11,color:"#94a3b8",fontWeight:600,marginBottom:6}}>誰付款</div>
-              <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-                {trip.members.map((m,i)=>(
-                  <button key={m} onClick={()=>setPaidBy(m)}
-                    style={{padding:"5px 14px",borderRadius:999,border:"2px solid",
-                      borderColor:paidBy===m?COLORS[i%COLORS.length]:"#e2e8f0",
-                      background:paidBy===m?COLORS[i%COLORS.length]:"#fff",
-                      color:paidBy===m?"#fff":"#64748b",fontWeight:paidBy===m?700:500,fontSize:13,cursor:"pointer"}}>{m}</button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Payment method */}
-          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12}}>
-            <div style={{display:"flex",background:"#f1f5f9",borderRadius:10,padding:3,gap:2}}>
-              <button onClick={()=>setPayMethod("cash")} style={{padding:"6px 14px",borderRadius:8,border:"none",cursor:"pointer",background:payMethod==="cash"?"#fff":"transparent",color:payMethod==="cash"?"#1e293b":"#94a3b8",fontWeight:payMethod==="cash"?700:500,fontSize:13,boxShadow:payMethod==="cash"?"0 1px 3px rgba(0,0,0,.12)":"none"}}>💵 現金</button>
-              <button onClick={()=>setPayMethod("card")} style={{padding:"6px 14px",borderRadius:8,border:"none",cursor:"pointer",background:payMethod==="card"?"#fff":"transparent",color:payMethod==="card"?"#6366f1":"#94a3b8",fontWeight:payMethod==="card"?700:500,fontSize:13,boxShadow:payMethod==="card"?"0 1px 3px rgba(0,0,0,.12)":"none"}}>💳 信用卡</button>
-            </div>
-            {payMethod==="card"&&(
-              <div style={{display:"flex",alignItems:"center",gap:4,marginLeft:"auto"}}>
-                <span style={{color:"#94a3b8",fontSize:12}}>手續費</span>
-                <input type="number" inputMode="decimal" value={feeRate} onChange={e=>setFeeRate(e.target.value)}
-                  style={{width:48,border:"1.5px solid #e2e8f0",borderRadius:8,padding:"4px 6px",fontSize:13,fontWeight:700,color:"#6366f1",outline:"none",textAlign:"center",background:"#f8f7ff"}}/>
-                <span style={{color:"#94a3b8",fontSize:12}}>%</span>
-              </div>
-            )}
-          </div>
-
-          {/* Amount */}
-          <div style={{display:"flex",gap:10,alignItems:"center"}}>
-            <div style={{flex:1,position:"relative"}}>
-              <span style={{position:"absolute",left:14,top:"50%",transform:"translateY(-50%)",color:"#94a3b8",fontSize:18,fontWeight:600,pointerEvents:"none"}}>{currInfo?.symbol}</span>
-              <input ref={amountRef} type="number" inputMode="decimal" placeholder="0" value={amount} onChange={e=>setAmount(e.target.value)} onKeyDown={e=>e.key==="Enter"&&addItem()}
-                style={{width:"100%",border:"1.5px solid #e2e8f0",borderRadius:14,padding:"14px 14px 14px 36px",fontSize:22,fontWeight:700,color:"#1e293b",outline:"none",boxSizing:"border-box",background:"#f8fafc"}}/>
-            </div>
-            <button onClick={addItem} disabled={!parsedAmt||!effectiveRate}
-              style={{background:parsedAmt&&effectiveRate?(payMethod==="card"?"#6366f1":"#1e293b"):"#e2e8f0",color:parsedAmt&&effectiveRate?"#fff":"#94a3b8",border:"none",borderRadius:14,padding:"14px 20px",fontSize:15,fontWeight:700,cursor:parsedAmt?"pointer":"default",whiteSpace:"nowrap"}}>加入</button>
-          </div>
-
-          {/* Preview */}
-          <div style={{minHeight:52,display:"flex",alignItems:"center",justifyContent:"center",marginTop:10}}>
-            {previewTotal!==null?(
-              <div style={{textAlign:"center"}}>
-                {payMethod==="card"&&previewFee>0?(
-                  <><div style={{color:"#94a3b8",fontSize:12,marginBottom:2}}>NT${previewBase?.toLocaleString()}<span style={{color:"#a5b4fc",margin:"0 4px"}}>+</span><span style={{color:"#a5b4fc"}}>手續費 NT${previewFee.toLocaleString()}</span></div>
-                  <div><span style={{color:"#64748b",fontSize:13}}>約　</span><span style={{color:"#6366f1",fontSize:32,fontWeight:800,letterSpacing:-1}}>NT${previewTotal.toLocaleString()}</span></div></>
-                ):(
-                  <div><span style={{color:"#64748b",fontSize:13}}>約　</span><span style={{color:"#0ea5e9",fontSize:32,fontWeight:800,letterSpacing:-1}}>NT${previewTotal.toLocaleString()}</span></div>
-                )}
-              </div>
-            ):(
-              <span style={{color:"#cbd5e1",fontSize:13}}>輸入金額即時預覽台幣</span>
-            )}
-          </div>
-
-          {/* Scan buttons */}
-          <button onClick={()=>fileRef.current?.click()} disabled={scanning}
-            style={{width:"100%",border:"2px dashed #e2e8f0",borderRadius:14,padding:"13px 0",background:scanning?"#f8fafc":"#fafafa",color:"#64748b",fontSize:14,fontWeight:500,cursor:scanning?"default":"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:8,marginTop:4,boxSizing:"border-box"}}>
-            {scanning?<><span style={{animation:"spin 1s linear infinite",display:"inline-block"}}>⏳</span> {scanMsg||"辨識中…"}</>:<><span>📷</span> 拍照 / 相簿選取收據（AI 辨識）</>}
-          </button>
-          <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp,image/gif" style={{display:"none"}} onChange={handleScan}/>
-
-          <button onClick={()=>setShowTextScan(p=>!p)}
-            style={{width:"100%",border:"none",background:"none",color:"#94a3b8",fontSize:12,cursor:"pointer",padding:"5px 0",boxSizing:"border-box"}}>
-            {showTextScan?"▲ 收起":"⌨️ 或貼上收據文字"}
-          </button>
-          {showTextScan&&(
-            <div style={{marginTop:4}}>
-              <textarea value={receiptText} onChange={e=>setReceiptText(e.target.value)} placeholder={"貼上或手打收據文字…"}
-                style={{width:"100%",border:"1.5px solid #e2e8f0",borderRadius:12,padding:"10px 12px",fontSize:13,outline:"none",resize:"none",height:100,boxSizing:"border-box",color:"#334155",lineHeight:1.6}}/>
-              <button onClick={handleTextScan} disabled={textScanLoading||!receiptText.trim()}
-                style={{width:"100%",marginTop:8,padding:"12px 0",border:"none",borderRadius:12,background:receiptText.trim()?"#1e293b":"#e2e8f0",color:receiptText.trim()?"#fff":"#94a3b8",fontWeight:700,fontSize:14,cursor:"pointer",boxSizing:"border-box"}}>
-                {textScanLoading?"⏳ AI 辨識中…":"AI 辨識"}
-              </button>
-            </div>
-          )}
-          {!scanning&&scanMsg&&(
-            <div style={{textAlign:"center",fontSize:12,marginTop:8,color:scanMsg.startsWith("✓")?"#10b981":"#ef4444"}}>{scanMsg}</div>
-          )}
-        </div>
-      </div>
-
-      {/* Items */}
-      {trip.items.length>0&&(
-        <div style={{padding:"16px 16px 160px"}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
-            <span style={{fontSize:12,color:"#94a3b8",fontWeight:600,letterSpacing:.5,textTransform:"uppercase"}}>已記錄 {trip.items.length} 筆</span>
-            {clearConfirm?(
-              <div style={{display:"flex",gap:8,alignItems:"center"}}>
-                <span style={{fontSize:12,color:"#64748b"}}>確定清除？</span>
-                <button onClick={()=>setClearConfirm(false)} style={{fontSize:11,color:"#64748b",background:"none",border:"1px solid #e2e8f0",borderRadius:6,padding:"2px 10px",cursor:"pointer"}}>取消</button>
-                <button onClick={()=>{onUpdateTrip(t=>({...t,items:[]}));setScanMsg("");setClearConfirm(false);}} style={{fontSize:11,color:"#fff",background:"#ef4444",border:"none",borderRadius:6,padding:"2px 10px",cursor:"pointer",fontWeight:600}}>清除</button>
-              </div>
-            ):(
-              <button onClick={()=>setClearConfirm(true)} style={{fontSize:12,color:"#ef4444",background:"none",border:"none",cursor:"pointer"}}>全部清除</button>
-            )}
-          </div>
-
-          <div style={{display:"flex",flexDirection:"column",gap:8}}>
-            {trip.items.map(item=>{
-              const ci=CURRENCIES.find(c=>c.code===item.currency);
-              const isCard=item.payMethod==="card";
-              const mc=item.paidBy?mColor(trip,item.paidBy):"#94a3b8";
-              if(editingItemId===item.id){
-                const itemRate=trip.customRates?.[item.currency]??liveRates[item.currency];
-                const ea=parseFloat(editAmount);
-                const eprev=itemRate&&!isNaN(ea)&&ea>0?Math.round(ea*itemRate):null;
-                const ef=eprev&&isCard?Math.round(eprev*parsedFee/100):0;
-                return(
-                  <div key={item.id} style={{background:"#fff",borderRadius:16,padding:"14px 16px",boxShadow:"0 2px 8px rgba(0,0,0,.08)",borderLeft:"3px solid #38bdf8"}}>
-                    <div style={{fontSize:11,color:"#38bdf8",fontWeight:600,marginBottom:10}}>✏️ 編輯品項</div>
-                    <input value={editName} onChange={e=>setEditName(e.target.value)} placeholder="品項名稱"
-                      style={{width:"100%",border:"1.5px solid #e2e8f0",borderRadius:10,padding:"8px 12px",fontSize:15,outline:"none",marginBottom:10,boxSizing:"border-box",color:"#1e293b"}}/>
-                    <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
-                      <span style={{color:"#94a3b8",fontSize:16,fontWeight:600,flexShrink:0}}>{ci?.symbol}</span>
-                      <input type="number" inputMode="decimal" value={editAmount} onChange={e=>setEditAmount(e.target.value)} onKeyDown={e=>e.key==="Enter"&&saveEdit(item)}
-                        style={{flex:1,border:"1.5px solid #e2e8f0",borderRadius:10,padding:"8px 12px",fontSize:18,fontWeight:700,outline:"none",color:"#1e293b",boxSizing:"border-box"}}/>
-                    </div>
-                    {eprev!==null&&<div style={{fontSize:12,color:"#64748b",marginBottom:10}}>≈ NT${(eprev+ef).toLocaleString()}{ef>0&&<span style={{color:"#a5b4fc"}}> (含手續費 NT${ef.toLocaleString()})</span>}</div>}
-                    <div style={{display:"flex",gap:8}}>
-                      <button onClick={cancelEdit} style={{flex:1,padding:"9px 0",border:"1.5px solid #e2e8f0",borderRadius:10,background:"#fff",color:"#64748b",fontWeight:600,fontSize:13,cursor:"pointer"}}>取消</button>
-                      <button onClick={()=>saveEdit(item)} style={{flex:2,padding:"9px 0",border:"none",borderRadius:10,background:"#1e293b",color:"#fff",fontWeight:700,fontSize:13,cursor:"pointer"}}>儲存</button>
-                    </div>
-                  </div>
-                );
-              }
-              return(
-                <div key={item.id} style={{background:"#fff",borderRadius:16,padding:"12px 16px",display:"flex",alignItems:"center",boxShadow:"0 1px 3px rgba(0,0,0,.05)",borderLeft:`3px solid ${isCard?"#6366f1":"#10b981"}`}}>
-                  <div style={{flex:1,minWidth:0}}>
-                    <div style={{display:"flex",alignItems:"center",gap:5,flexWrap:"wrap"}}>
-                      <div style={{fontWeight:600,color:"#1e293b",fontSize:15,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{item.name}</div>
-                      <span style={{fontSize:10,fontWeight:700,padding:"1px 6px",borderRadius:4,background:isCard?"#ede9fe":"#dcfce7",color:isCard?"#6366f1":"#16a34a",flexShrink:0}}>{isCard?"💳 刷卡":"💵 現金"}</span>
-                      {item.paidBy&&<span style={{fontSize:10,fontWeight:700,padding:"1px 6px",borderRadius:4,background:mc+"22",color:mc,flexShrink:0}}>{item.paidBy}</span>}
-                    </div>
-                    <div style={{color:"#94a3b8",fontSize:12,marginTop:2}}>
-                      {ci?.flag} {ci?.symbol}{item.amount.toLocaleString()}
-                      {isCard&&item.fee>0&&<span style={{color:"#a5b4fc",marginLeft:6}}>+手續費 NT${item.fee.toLocaleString()}</span>}
-                    </div>
-                    {(item.datetime||item.date)&&<div style={{color:"#cbd5e1",fontSize:11,marginTop:2}}>🕐 {fmtDT(item.datetime||item.date)}</div>}
-                  </div>
-                  <div style={{textAlign:"right",marginLeft:12,flexShrink:0}}>
-                    <div style={{fontWeight:800,color:isCard?"#6366f1":"#1e293b",fontSize:16}}>NT${item.total.toLocaleString()}</div>
-                    <button onClick={()=>startEdit(item)} style={{fontSize:11,color:"#94a3b8",background:"none",border:"none",cursor:"pointer",marginTop:2,padding:0}}>✏️ 編輯</button>
-                  </div>
-                  <button onClick={()=>removeItem(item.id)} style={{marginLeft:8,color:"#cbd5e1",background:"none",border:"none",fontSize:22,lineHeight:1,cursor:"pointer",padding:"0 4px"}}>×</button>
-                </div>
-              );
-            })}
-          </div>
-
-          {/* Summary */}
-          <div style={{background:"#fff",borderRadius:16,padding:16,marginTop:12,boxShadow:"0 1px 3px rgba(0,0,0,.05)"}}>
-            {trip.members.length>0&&(
-              <>
-                <div style={{fontSize:11,color:"#94a3b8",fontWeight:600,letterSpacing:.5,textTransform:"uppercase",marginBottom:8}}>各人支出</div>
-                {trip.members.map((m,i)=>(
-                  <div key={m} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"5px 0",borderBottom:"1px solid #f1f5f9"}}>
-                    <div style={{display:"flex",alignItems:"center",gap:8}}>
-                      <div style={{width:8,height:8,borderRadius:"50%",background:COLORS[i%COLORS.length]}}/>
-                      <span style={{fontSize:14,color:"#334155"}}>{m}</span>
-                    </div>
-                    <span style={{fontWeight:700,color:COLORS[i%COLORS.length],fontSize:14}}>NT${Math.round(byMember[m]||0).toLocaleString()}</span>
-                  </div>
-                ))}
-                <div style={{height:1,background:"#e2e8f0",margin:"10px 0"}}/>
-              </>
-            )}
-            <div style={{fontSize:11,color:"#94a3b8",fontWeight:600,letterSpacing:.5,textTransform:"uppercase",marginBottom:8}}>付款方式</div>
-            {hasCash&&<div style={{display:"flex",justifyContent:"space-between",padding:"5px 0",fontSize:14}}><span style={{color:"#16a34a",fontWeight:600}}>💵 現金</span><span style={{fontWeight:700,color:"#1e293b"}}>NT${cashTotal.toLocaleString()}</span></div>}
-            {hasCard&&(
-              <>
-                <div style={{display:"flex",justifyContent:"space-between",padding:"4px 0",fontSize:13,color:"#64748b"}}><span>💳 刷卡金額</span><span>NT${cardBase.toLocaleString()}</span></div>
-                <div style={{display:"flex",justifyContent:"space-between",padding:"4px 0",fontSize:13,color:"#a5b4fc"}}><span>國際手續費</span><span>+NT${cardFee.toLocaleString()}</span></div>
-                <div style={{display:"flex",justifyContent:"space-between",padding:"5px 0",fontSize:14,borderTop:"1px solid #f1f5f9",marginTop:2}}><span style={{color:"#6366f1",fontWeight:600}}>💳 刷卡合計</span><span style={{fontWeight:700,color:"#6366f1"}}>NT${cardTotal.toLocaleString()}</span></div>
-              </>
-            )}
-            {Object.keys(byCurrency).length>1&&(
-              <>
-                <div style={{height:1,background:"#e2e8f0",margin:"10px 0"}}/>
-                <div style={{fontSize:11,color:"#94a3b8",fontWeight:600,letterSpacing:.5,textTransform:"uppercase",marginBottom:8}}>各幣別消費</div>
-                {Object.entries(byCurrency).map(([code,amt])=>{const ci=CURRENCIES.find(c=>c.code===code);return(
-                  <div key={code} style={{display:"flex",justifyContent:"space-between",padding:"4px 0",fontSize:13,color:"#64748b"}}>
-                    <span>{ci?.flag} {ci?.name}</span><span style={{fontWeight:600}}>{ci?.symbol}{amt.toLocaleString()}</span>
-                  </div>
-                );})}
-              </>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Bottom total */}
-      {trip.items.length>0&&(
-        <div style={{position:"fixed",bottom:0,left:0,right:0,background:"#1e293b",padding:"14px 24px 28px",boxShadow:"0 -4px 24px rgba(0,0,0,.2)"}}>
-          {hasCash&&hasCard&&(
-            <div style={{display:"flex",justifyContent:"space-between",marginBottom:8,paddingBottom:8,borderBottom:"1px solid rgba(255,255,255,.08)"}}>
-              <div style={{display:"flex",gap:16}}>
-                <span style={{color:"#34d399",fontSize:12}}>💵 NT${cashTotal.toLocaleString()}</span>
-                <span style={{color:"#a5b4fc",fontSize:12}}>💳 NT${cardTotal.toLocaleString()}</span>
-              </div>
-              {cardFee>0&&<span style={{color:"#64748b",fontSize:11}}>含手續費 NT${cardFee.toLocaleString()}</span>}
-            </div>
-          )}
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-            <div>
-              <div style={{color:"#64748b",fontSize:12}}>台幣合計</div>
-              <div style={{color:"#94a3b8",fontSize:11,marginTop:1}}>{trip.items.length} 筆消費</div>
-            </div>
-            <div style={{color:"#34d399",fontSize:34,fontWeight:900,letterSpacing:-1}}>NT${grandTotal.toLocaleString()}</div>
-          </div>
-        </div>
-      )}
-    </div>
+  return h("div",{style:{background:"#f0f4f8",minHeight:"100vh"}},
+    /* Header */
+    h("div",{style:S.hd},
+      h("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:6}},
+        btn("‹ 返回",onBack,{background:"none",color:"#38bdf8",fontSize:15,padding:0,fontWeight:600}),
+        trip.items.length>0&&h("div",{style:{textAlign:"right"}},
+          h("div",{style:{color:"#64748b",fontSize:11}},trip.items.length+" 筆 · 合計"),
+          h("div",{style:{color:"#34d399",fontSize:20,fontWeight:800,letterSpacing:-.5}},"NT$"+grand.toLocaleString())
+        )
+      ),
+      h("div",{style:{color:"#f1f5f9",fontSize:18,fontWeight:700,marginBottom:12}},trip.emoji+" "+trip.name),
+      h("div",{style:{display:"flex",gap:8,overflowX:"auto",paddingBottom:14}},
+        CUR.map(c=>btn(c.flag+" "+c.name,()=>setCur(c.code),{
+          flexShrink:0,padding:"6px 14px",borderRadius:999,
+          background:cur===c.code?"#38bdf8":"rgba(255,255,255,.08)",
+          color:cur===c.code?"#0f172a":"#94a3b8",fontWeight:cur===c.code?700:500,fontSize:13
+        }))
+      )
+    ),
+    /* Rate strip */
+    h("div",{style:{background:"#0f172a",padding:"8px 14px"}},
+      editR
+        ?h("div",{style:{display:"flex",alignItems:"center",gap:6,justifyContent:"center",flexWrap:"wrap"}},
+            !inv
+              ?h("span",{style:{color:"#38bdf8",fontSize:13,fontWeight:600}},"1 "+cinfo?.sym+" ("+cur+") ＝ NT$")
+              :h("span",{style:{color:"#38bdf8",fontSize:13,fontWeight:600}},"NT$1 ＝"),
+            h("input",{ref:rRef,type:"number",inputMode:"decimal",value:rIn,onChange:e=>setRIn(e.target.value),onKeyDown:e=>e.key==="Enter"&&confR(),placeholder:lr?fmtR(inv?1/lr:lr):"",
+              style:{width:80,background:"#1e293b",border:"1.5px solid #38bdf8",borderRadius:8,padding:"4px 8px",color:"#f1f5f9",fontSize:15,fontWeight:700,outline:"none",textAlign:"center"}}),
+            inv&&h("span",{style:{color:"#38bdf8",fontSize:13,fontWeight:600}},cinfo?.sym+" ("+cur+")"),
+            btn("⇄",togDir,{background:"rgba(255,255,255,.1)",borderRadius:6,padding:"4px 8px",color:"#94a3b8",fontSize:14}),
+            btn("確定",confR,{background:"#38bdf8",color:"#0f172a",borderRadius:8,padding:"4px 12px",fontWeight:700,fontSize:13}),
+            btn("×",()=>setEditR(false),{background:"transparent",color:"#64748b",fontSize:18,lineHeight:1,padding:"0 2px"})
+          )
+        :h("div",{style:{display:"flex",alignItems:"center",justifyContent:"center",gap:6,flexWrap:"wrap"}},
+            !inv
+              ?h("span",{style:{color:"#38bdf8",fontSize:13,fontWeight:600}},"1 "+cinfo?.sym+" ("+cur+")\u3000＝\u3000",h("span",{style:{color:"#f1f5f9"}},"NT$ "+fmtR(dr)))
+              :h("span",{style:{color:"#38bdf8",fontSize:13,fontWeight:600}},"NT$1\u3000＝\u3000",h("span",{style:{color:"#f1f5f9"}},fmtR(dr)+" "+cinfo?.sym+" ("+cur+")")),
+            btn("⇄",togDir,{background:"rgba(255,255,255,.08)",borderRadius:6,padding:"2px 7px",color:"#64748b",fontSize:13}),
+            isCust&&h("span",{style:{fontSize:10,fontWeight:700,padding:"2px 6px",borderRadius:4,background:"#f59e0b",color:"#0f172a"}},"自填"),
+            isCust&&dl!=null&&h("span",{style:{color:"#475569",fontSize:11}},"(即時 "+fmtR(dl)+")"),
+            btn("✏️ 修改",openR,{background:"rgba(255,255,255,.08)",borderRadius:6,padding:"3px 8px",color:"#94a3b8",fontSize:12}),
+            isCust&&btn("還原即時",clrCR,{background:"transparent",color:"#64748b",fontSize:11,textDecoration:"underline"})
+          )
+    ),
+    /* Input card */
+    h("div",{style:{padding:"16px 16px 0"}},
+      h("div",{style:{background:"#fff",borderRadius:20,padding:16,boxShadow:"0 1px 4px rgba(0,0,0,.06)"}},
+        h("input",{type:"text",placeholder:"品項名稱（可不填）",value:iName,onChange:e=>setIName(e.target.value),
+          style:{width:"100%",border:"none",borderBottom:"1.5px solid #e2e8f0",padding:"8px 0",fontSize:15,color:"#334155",outline:"none",marginBottom:12,background:"transparent"}}),
+        trip.members.length>0&&h("div",{style:{marginBottom:12}},
+          h("div",{style:{fontSize:11,color:"#94a3b8",fontWeight:600,marginBottom:6}},"誰付款"),
+          h("div",{style:{display:"flex",gap:6,flexWrap:"wrap"}},
+            trip.members.map((m,i)=>btn(m,()=>setBy(m),{
+              padding:"5px 14px",borderRadius:999,border:"2px solid",
+              borderColor:by===m?COLORS[i%COLORS.length]:"#e2e8f0",
+              background:by===m?COLORS[i%COLORS.length]:"#fff",
+              color:by===m?"#fff":"#64748b",fontWeight:by===m?700:500,fontSize:13
+            }))
+          )
+        ),
+        h("div",{style:{display:"flex",alignItems:"center",gap:8,marginBottom:12}},
+          h("div",{style:{display:"flex",background:"#f1f5f9",borderRadius:10,padding:3,gap:2}},
+            btn("💵 現金",()=>setPay("cash"),{padding:"6px 14px",borderRadius:8,background:pay==="cash"?"#fff":"transparent",color:pay==="cash"?"#1e293b":"#94a3b8",fontWeight:pay==="cash"?700:500,fontSize:13,boxShadow:pay==="cash"?"0 1px 3px rgba(0,0,0,.12)":"none"}),
+            btn("💳 信用卡",()=>setPay("card"),{padding:"6px 14px",borderRadius:8,background:pay==="card"?"#fff":"transparent",color:pay==="card"?"#6366f1":"#94a3b8",fontWeight:pay==="card"?700:500,fontSize:13,boxShadow:pay==="card"?"0 1px 3px rgba(0,0,0,.12)":"none"})
+          ),
+          pay==="card"&&h("div",{style:{display:"flex",alignItems:"center",gap:4,marginLeft:"auto"}},
+            h("span",{style:{color:"#94a3b8",fontSize:12}},"手續費"),
+            h("input",{type:"number",inputMode:"decimal",value:fee,onChange:e=>setFee(e.target.value),
+              style:{width:48,border:"1.5px solid #e2e8f0",borderRadius:8,padding:"4px 6px",fontSize:13,fontWeight:700,color:"#6366f1",outline:"none",textAlign:"center",background:"#f8f7ff"}}),
+            h("span",{style:{color:"#94a3b8",fontSize:12}},"%")
+          )
+        ),
+        h("div",{style:{display:"flex",gap:10,alignItems:"center"}},
+          h("div",{style:{flex:1,position:"relative"}},
+            h("span",{style:{position:"absolute",left:14,top:"50%",transform:"translateY(-50%)",color:"#94a3b8",fontSize:18,fontWeight:600,pointerEvents:"none"}},cinfo?.sym),
+            h("input",{ref:aRef,type:"number",inputMode:"decimal",placeholder:"0",value:amt,onChange:e=>setAmt(e.target.value),onKeyDown:e=>e.key==="Enter"&&add(),
+              style:{width:"100%",border:"1.5px solid #e2e8f0",borderRadius:14,padding:"14px 14px 14px 36px",fontSize:22,fontWeight:700,color:"#1e293b",outline:"none",background:"#f8fafc"}})
+          ),
+          btn("加入",add,{background:pAmt&&er?(pay==="card"?"#6366f1":"#1e293b"):"#e2e8f0",color:pAmt&&er?"#fff":"#94a3b8",borderRadius:14,padding:"14px 20px",fontSize:15,fontWeight:700,whiteSpace:"nowrap",opacity:pAmt&&er?1:.6})
+        ),
+        h("div",{style:{minHeight:52,display:"flex",alignItems:"center",justifyContent:"center",marginTop:10}},
+          pTot!==null
+            ?h("div",{style:{textAlign:"center"}},
+                pay==="card"&&pFeeV>0
+                  ?h("div",null,
+                      h("div",{style:{color:"#94a3b8",fontSize:12,marginBottom:2}},"NT$"+(pBase||0).toLocaleString(),h("span",{style:{color:"#a5b4fc",margin:"0 4px"}},"+"),h("span",{style:{color:"#a5b4fc"}},"手續費 NT$"+pFeeV.toLocaleString())),
+                      h("div",null,h("span",{style:{color:"#64748b",fontSize:13}},"約\u3000"),h("span",{style:{color:"#6366f1",fontSize:32,fontWeight:800,letterSpacing:-1}},"NT$"+pTot.toLocaleString()))
+                    )
+                  :h("div",null,h("span",{style:{color:"#64748b",fontSize:13}},"約\u3000"),h("span",{style:{color:"#0ea5e9",fontSize:32,fontWeight:800,letterSpacing:-1}},"NT$"+pTot.toLocaleString()))
+              )
+            :h("span",{style:{color:"#cbd5e1",fontSize:13}},"輸入金額即時預覽台幣")
+        ),
+        btn(scan?h("span",null,h("span",{style:{animation:"spin 1s linear infinite",display:"inline-block"}},"⏳")," "+(msg||"辨識中…")):"📷 拍照 / 相簿選取收據（AI 辨識）",
+          ()=>fRef.current?.click(),
+          {width:"100%",border:"2px dashed #e2e8f0",borderRadius:14,padding:"13px 0",background:scan?"#f8fafc":"#fafafa",color:"#64748b",fontSize:14,fontWeight:500,display:"flex",alignItems:"center",justifyContent:"center",gap:8,marginTop:4}
+        ),
+        h("input",{ref:fRef,type:"file",accept:"image/jpeg,image/png,image/webp,image/gif",style:{display:"none"},onChange:doScan}),
+        btn(showTxt?"▲ 收起":"⌨️ 或貼上收據文字",()=>setShowTxt(p=>!p),{width:"100%",background:"none",color:"#94a3b8",fontSize:12,padding:"5px 0"}),
+        showTxt&&h("div",{style:{marginTop:4}},
+          h("textarea",{value:txt,onChange:e=>setTxt(e.target.value),placeholder:"貼上或手打收據文字…",
+            style:{width:"100%",border:"1.5px solid #e2e8f0",borderRadius:12,padding:"10px 12px",fontSize:13,outline:"none",resize:"none",height:100,color:"#334155",lineHeight:1.6}}),
+          btn(txLoading?"⏳ AI 辨識中…":"AI 辨識",doTxt,
+            {width:"100%",marginTop:8,padding:"12px 0",borderRadius:12,background:txt.trim()?"#1e293b":"#e2e8f0",color:txt.trim()?"#fff":"#94a3b8",fontWeight:700,fontSize:14})
+        ),
+        !scan&&msg&&h("div",{style:{textAlign:"center",fontSize:12,marginTop:8,color:msg.startsWith("✓")?"#10b981":"#ef4444"}},msg)
+      )
+    ),
+    /* Items */
+    trip.items.length>0&&h("div",{style:{padding:"16px 16px 160px"}},
+      h("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}},
+        h("span",{style:{fontSize:12,color:"#94a3b8",fontWeight:600,letterSpacing:.5,textTransform:"uppercase"}},"已記錄 "+trip.items.length+" 筆"),
+        clr
+          ?h("div",{style:{display:"flex",gap:8,alignItems:"center"}},
+              h("span",{style:{fontSize:12,color:"#64748b"}},"確定清除？"),
+              btn("取消",()=>setClr(false),{fontSize:11,color:"#64748b",background:"none",border:"1px solid #e2e8f0",borderRadius:6,padding:"2px 10px"}),
+              btn("清除",()=>{onUpd(t=>({...t,items:[]}));setMsg("");setClr(false);},{fontSize:11,color:"#fff",background:"#ef4444",borderRadius:6,padding:"2px 10px",fontWeight:600})
+            )
+          :btn("全部清除",()=>setClr(true),{fontSize:12,color:"#ef4444",background:"none"})
+      ),
+      h("div",{style:{display:"flex",flexDirection:"column",gap:8}},
+        trip.items.map(item=>{
+          const c=ci(item.currency);const isC=item.payMethod==="card";const mcol=item.paidBy?mc(trip,item.paidBy):"#94a3b8";
+          if(eId===item.id){
+            const ir=trip.cRates?.[item.currency]??rates[item.currency];
+            const ea2=parseFloat(eAmt);const ep=ir&&!isNaN(ea2)&&ea2>0?Math.round(ea2*ir):null;const ef=ep&&isC?Math.round(ep*pFee/100):0;
+            return h("div",{key:item.id,style:{background:"#fff",borderRadius:16,padding:"14px 16px",boxShadow:"0 2px 8px rgba(0,0,0,.08)",borderLeft:"3px solid #38bdf8"}},
+              h("div",{style:{fontSize:11,color:"#38bdf8",fontWeight:600,marginBottom:10}},"✏️ 編輯品項"),
+              h("input",{value:eName,onChange:e=>setEN(e.target.value),placeholder:"品項名稱",
+                style:{width:"100%",border:"1.5px solid #e2e8f0",borderRadius:10,padding:"8px 12px",fontSize:15,outline:"none",marginBottom:10,color:"#1e293b"}}),
+              h("div",{style:{display:"flex",alignItems:"center",gap:8,marginBottom:8}},
+                h("span",{style:{color:"#94a3b8",fontSize:16,fontWeight:600,flexShrink:0}},c?.sym),
+                h("input",{type:"number",inputMode:"decimal",value:eAmt,onChange:e=>setEA(e.target.value),onKeyDown:e=>e.key==="Enter"&&saveE(item),
+                  style:{flex:1,border:"1.5px solid #e2e8f0",borderRadius:10,padding:"8px 12px",fontSize:18,fontWeight:700,outline:"none",color:"#1e293b"}})
+              ),
+              ep!==null&&h("div",{style:{fontSize:12,color:"#64748b",marginBottom:10}},"≈ NT$"+(ep+ef).toLocaleString(),ef>0&&h("span",{style:{color:"#a5b4fc"}}," (含手續費 NT$"+ef.toLocaleString()+")")),
+              h("div",{style:{display:"flex",gap:8}},
+                btn("取消",cancelE,{flex:1,padding:"9px 0",border:"1.5px solid #e2e8f0",borderRadius:10,background:"#fff",color:"#64748b",fontWeight:600,fontSize:13}),
+                btn("儲存",()=>saveE(item),{flex:2,padding:"9px 0",borderRadius:10,background:"#1e293b",color:"#fff",fontWeight:700,fontSize:13})
+              )
+            );
+          }
+          return h("div",{key:item.id,style:{background:"#fff",borderRadius:16,padding:"12px 16px",display:"flex",alignItems:"center",boxShadow:"0 1px 3px rgba(0,0,0,.05)",borderLeft:"3px solid "+(isC?"#6366f1":"#10b981")}},
+            h("div",{style:{flex:1,minWidth:0}},
+              h("div",{style:{display:"flex",alignItems:"center",gap:5,flexWrap:"wrap"}},
+                h("div",{style:{fontWeight:600,color:"#1e293b",fontSize:15,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}},item.name),
+                h("span",{style:{fontSize:10,fontWeight:700,padding:"1px 6px",borderRadius:4,background:isC?"#ede9fe":"#dcfce7",color:isC?"#6366f1":"#16a34a",flexShrink:0}},isC?"💳 刷卡":"💵 現金"),
+                item.paidBy&&h("span",{style:{fontSize:10,fontWeight:700,padding:"1px 6px",borderRadius:4,background:mcol+"22",color:mcol,flexShrink:0}},item.paidBy)
+              ),
+              h("div",{style:{color:"#94a3b8",fontSize:12,marginTop:2}},c?.flag+" "+c?.sym+(item.amount||0).toLocaleString(),isC&&item.fee>0&&h("span",{style:{color:"#a5b4fc",marginLeft:6}},"+手續費 NT$"+item.fee.toLocaleString())),
+              (item.datetime||item.date)&&h("div",{style:{color:"#cbd5e1",fontSize:11,marginTop:2}},"🕐 "+fmtT(item.datetime||item.date))
+            ),
+            h("div",{style:{textAlign:"right",marginLeft:12,flexShrink:0}},
+              h("div",{style:{fontWeight:800,color:isC?"#6366f1":"#1e293b",fontSize:16}},"NT$"+(item.total||0).toLocaleString()),
+              btn("✏️ 編輯",()=>startE(item),{fontSize:11,color:"#94a3b8",background:"none",padding:0,marginTop:2})
+            ),
+            btn("×",()=>del(item.id),{marginLeft:8,color:"#cbd5e1",background:"none",fontSize:22,lineHeight:1,padding:"0 4px"})
+          );
+        })
+      ),
+      /* Summary */
+      h("div",{style:{background:"#fff",borderRadius:16,padding:16,marginTop:12,boxShadow:"0 1px 3px rgba(0,0,0,.05)"}},
+        trip.members.length>0&&h("div",null,
+          h("div",{style:{fontSize:11,color:"#94a3b8",fontWeight:600,letterSpacing:.5,textTransform:"uppercase",marginBottom:8}},"各人支出"),
+          trip.members.map((m,i)=>h("div",{key:m,style:{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"5px 0",borderBottom:"1px solid #f1f5f9"}},
+            h("div",{style:{display:"flex",alignItems:"center",gap:8}},
+              h("div",{style:{width:8,height:8,borderRadius:"50%",background:COLORS[i%COLORS.length]}}),
+              h("span",{style:{fontSize:14,color:"#334155"}},m)
+            ),
+            h("span",{style:{fontWeight:700,color:COLORS[i%COLORS.length],fontSize:14}},"NT$"+Math.round(byM[m]||0).toLocaleString())
+          )),
+          h("div",{style:{height:1,background:"#e2e8f0",margin:"10px 0"}})
+        ),
+        h("div",{style:{fontSize:11,color:"#94a3b8",fontWeight:600,letterSpacing:.5,textTransform:"uppercase",marginBottom:8}},"付款方式"),
+        hasCash&&h("div",{style:{display:"flex",justifyContent:"space-between",padding:"5px 0",fontSize:14}},h("span",{style:{color:"#16a34a",fontWeight:600}},"💵 現金"),h("span",{style:{fontWeight:700,color:"#1e293b"}},"NT$"+cashT.toLocaleString())),
+        hasCard&&h("div",null,
+          h("div",{style:{display:"flex",justifyContent:"space-between",padding:"4px 0",fontSize:13,color:"#64748b"}},h("span","💳 刷卡金額"),h("span","NT$"+cardB.toLocaleString())),
+          h("div",{style:{display:"flex",justifyContent:"space-between",padding:"4px 0",fontSize:13,color:"#a5b4fc"}},h("span","國際手續費"),h("span","+NT$"+cardF.toLocaleString())),
+          h("div",{style:{display:"flex",justifyContent:"space-between",padding:"5px 0",fontSize:14,borderTop:"1px solid #f1f5f9",marginTop:2}},h("span",{style:{color:"#6366f1",fontWeight:600}},"💳 刷卡合計"),h("span",{style:{fontWeight:700,color:"#6366f1"}},"NT$"+cardT.toLocaleString()))
+        ),
+        Object.keys(byC).length>1&&h("div",null,
+          h("div",{style:{height:1,background:"#e2e8f0",margin:"10px 0"}}),
+          h("div",{style:{fontSize:11,color:"#94a3b8",fontWeight:600,letterSpacing:.5,textTransform:"uppercase",marginBottom:8}},"各幣別消費"),
+          Object.entries(byC).map(([code,a])=>{const c=ci(code);return h("div",{key:code,style:{display:"flex",justifyContent:"space-between",padding:"4px 0",fontSize:13,color:"#64748b"}},h("span",null,c?.flag+" "+c?.name),h("span",{style:{fontWeight:600}},c?.sym+a.toLocaleString()));})
+        )
+      )
+    ),
+    /* Bottom bar */
+    trip.items.length>0&&h("div",{style:{position:"fixed",bottom:0,left:0,right:0,background:"#1e293b",padding:"14px 24px 28px",boxShadow:"0 -4px 24px rgba(0,0,0,.2)"}},
+      hasCash&&hasCard&&h("div",{style:{display:"flex",justifyContent:"space-between",marginBottom:8,paddingBottom:8,borderBottom:"1px solid rgba(255,255,255,.08)"}},
+        h("div",{style:{display:"flex",gap:16}},
+          h("span",{style:{color:"#34d399",fontSize:12}},"💵 NT$"+cashT.toLocaleString()),
+          h("span",{style:{color:"#a5b4fc",fontSize:12}},"💳 NT$"+cardT.toLocaleString())
+        ),
+        cardF>0&&h("span",{style:{color:"#64748b",fontSize:11}},"含手續費 NT$"+cardF.toLocaleString())
+      ),
+      h("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center"}},
+        h("div",null,h("div",{style:{color:"#64748b",fontSize:12}},"台幣合計"),h("div",{style:{color:"#94a3b8",fontSize:11,marginTop:1}},trip.items.length+" 筆消費")),
+        h("div",{style:{color:"#34d399",fontSize:34,fontWeight:900,letterSpacing:-1}},"NT$"+grand.toLocaleString())
+      )
+    )
   );
 }
 
-ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+ReactDOM.createRoot(document.getElementById("root")).render(h(App));
 </script>
 </body>
 </html>
