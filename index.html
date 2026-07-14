@@ -158,12 +158,21 @@ function App(){
   const[liveRates,setLiveRates]=useState({});
   const[loading,setLoading]=useState(false);
   const[syncStatus,setSyncStatus]=useState("");
-  const[whoAmI,setWhoAmI]=useState(null); // {code, members, data} — pending identity selection
+  const[whoAmI,setWhoAmI]=useState(null);
+  const[pendingJoin,setPendingJoin]=useState(null); // {code, members, data} — pending identity selection
   const channelRef=useRef(null);
   const saveTimerRef=useRef(null);
 
   useEffect(()=>{
     try{const s=localStorage.getItem("tl-trips");if(s)setMyTrips(JSON.parse(s)||[]);}catch{}
+    // Detect ?join=CODE in URL
+    const params=new URLSearchParams(window.location.search);
+    const joinParam=params.get("join");
+    if(joinParam){
+      window.history.replaceState({},"",window.location.pathname);
+      setPendingJoin(joinParam.toUpperCase());
+    }
+    setLoaded(true);
     fetch("https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies/twd.json")
       .then(r=>r.json()).then(d=>{
         const r={};CUR.forEach(c=>{if(d.twd[c.key])r[c.code]=1/d.twd[c.key];});
@@ -178,19 +187,33 @@ function App(){
 
   const saveMyTrips=trips=>{setMyTrips(trips);localStorage.setItem("tl-trips",JSON.stringify(trips));};
 
+  // Auto-join from shared URL
+  useEffect(()=>{
+    if(loaded&&pendingJoin){setPendingJoin(null);joinTrip(pendingJoin);}
+  },[loaded,pendingJoin]);
+
   const subscribeTrip=useCallback((code)=>{
     if(channelRef.current)sb.removeChannel(channelRef.current);
     const ch=sb.channel("trip:"+code)
       .on("postgres_changes",{event:"UPDATE",schema:"public",table:"trips",filter:`invite_code=eq.${code}`},
         payload=>{
-          if(payload.new?.data){
-            setTripData(prev=>{
-              const remoteT=new Date(payload.new.updated_at).getTime();
-              const localT=prev?._savedAt||0;
-              if(remoteT>localT+500)return{...payload.new.data,_savedAt:localT};
-              return prev;
-            });
-          }
+          if(!payload.new?.data)return;
+          const remote=payload.new.data;
+          setTripData(prev=>{
+            if(!prev)return remote;
+            const localIds=new Set((prev.items||[]).map(i=>i.id));
+            const remoteIds=new Set((remote.items||[]).map(i=>i.id));
+            const hasNewItems=(remote.items||[]).some(i=>!localIds.has(i.id));
+            const hasRemovedItems=(prev.items||[]).some(i=>!remoteIds.has(i.id));
+            const membersChanged=JSON.stringify(remote.members)!==JSON.stringify(prev.members);
+            const catsChanged=JSON.stringify(remote.categories)!==JSON.stringify(prev.categories);
+            const cRatesChanged=JSON.stringify(remote.cRates)!==JSON.stringify(prev.cRates);
+            if(!hasNewItems&&!hasRemovedItems&&!membersChanged&&!catsChanged&&!cRatesChanged)
+              return prev; // pure echo — ignore
+            // Merge: remote as base + keep any locally-added items not yet saved
+            const pendingLocal=(prev.items||[]).filter(i=>!remoteIds.has(i.id)&&hasNewItems===false);
+            return{...remote,items:[...(remote.items||[]),...pendingLocal]};
+          });
         })
       .subscribe();
     channelRef.current=ch;
@@ -218,9 +241,8 @@ function App(){
       setSyncStatus("saving");
       saveTimerRef.current=setTimeout(async()=>{
         try{
-          const ts=Date.now();
-          await dbSave(activeCode,{...next,_savedAt:ts});
-          setTripData(p=>p?{...p,_savedAt:ts}:p);
+          // Read latest tripData via ref to avoid stale closure
+          await dbSave(activeCode,next);
           setSyncStatus("saved");setTimeout(()=>setSyncStatus(""),2000);
         }catch{setSyncStatus("error");}
       },600);
@@ -471,6 +493,7 @@ function TripScreen({trip,code,rates,syncStatus,onBack,onUpdate}){
   const[eCat,setEC]=useState("");
   const[showCode,setShowCode]=useState(false);
   const[copied,setCopied]=useState(false);
+  const[shared,setShared]=useState(false);
   const[showAddCat,setShowAddCat]=useState(false);
   const[newCat,setNewCat]=useState("");
   const[manageCats,setManageCats]=useState(false);
@@ -563,11 +586,21 @@ function TripScreen({trip,code,rates,syncStatus,onBack,onUpdate}){
         btn(showCode?"收起":"🔗 邀請碼",()=>setShowCode(p=>!p),{background:"rgba(255,255,255,.1)",color:"#94a3b8",borderRadius:8,padding:"5px 10px",fontSize:12,fontWeight:600})
       ),
       showCode&&h("div",{style:{marginBottom:12,background:"rgba(255,255,255,.06)",borderRadius:12,padding:"12px 16px"}},
-        h("div",{style:{fontSize:11,color:"#94a3b8",marginBottom:6}},"傳給家人，輸入邀請碼即可加入："),
-        h("div",{style:{display:"flex",alignItems:"center",gap:10}},
+        h("div",{style:{fontSize:11,color:"#94a3b8",marginBottom:8}},"傳給家人，輸入邀請碼即可加入："),
+        h("div",{style:{display:"flex",alignItems:"center",gap:10,marginBottom:10}},
           h("div",{style:{fontSize:28,fontWeight:900,letterSpacing:6,color:"#38bdf8",flex:1}},code),
-          btn(copied?"✓ 已複製":"複製",()=>{navigator.clipboard?.writeText(code).then(()=>{setCopied(true);setTimeout(()=>setCopied(false),2000);});},{background:"#38bdf8",color:"#0f172a",borderRadius:8,padding:"7px 14px",fontSize:13,fontWeight:700})
-        )
+          btn(copied?"✓ 已複製":"複製碼",()=>{navigator.clipboard?.writeText(code).then(()=>{setCopied(true);setTimeout(()=>setCopied(false),2000);});},{background:"rgba(255,255,255,.15)",color:"#f1f5f9",borderRadius:8,padding:"7px 12px",fontSize:12,fontWeight:700})
+        ),
+        h("button",{
+          onClick:()=>{
+            const url=window.location.origin+window.location.pathname+"?join="+code;
+            navigator.clipboard?.writeText(url).then(()=>{setShared(true);setTimeout(()=>setShared(false),2500);});
+          },
+          style:{width:"100%",padding:"11px 0",border:"none",borderRadius:10,
+            background:shared?"#34d399":"#38bdf8",
+            color:"#0f172a",fontWeight:700,fontSize:14,cursor:"pointer",
+            transition:"background .3s"}
+        },shared?"✓ 連結已複製！":"🔗 分享行程（複製連結）")
       ),
       h("div",{style:{display:"flex",gap:8,overflowX:"auto",paddingBottom:14}},
         CUR.map(c=>btn(c.flag+" "+c.name,()=>setCur(c.code),{flexShrink:0,padding:"6px 14px",borderRadius:999,background:cur===c.code?"#38bdf8":"rgba(255,255,255,.08)",color:cur===c.code?"#0f172a":"#94a3b8",fontWeight:cur===c.code?700:500,fontSize:13}))
