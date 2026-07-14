@@ -218,36 +218,6 @@ function App(){
     if(loaded&&pendingJoin){setPendingJoin(null);joinTrip(pendingJoin);}
   },[loaded,pendingJoin]);
 
-  const tripDataRef=useRef(null);
-  useEffect(()=>{tripDataRef.current=tripData;},[tripData]);
-
-  // Re-fetch and re-subscribe when app comes back to foreground (PWA fix)
-  useEffect(()=>{
-    const handleVisibility=async()=>{
-      if(document.visibilityState==="visible"&&activeCode){
-        try{
-          const data=await dbLoad(activeCode);
-          if(data)setTripData(data);
-          subscribeTrip(activeCode);
-        }catch{}
-      }
-    };
-    document.addEventListener("visibilitychange",handleVisibility);
-    return()=>document.removeEventListener("visibilitychange",handleVisibility);
-  },[activeCode,subscribeTrip]);
-
-  // Re-fetch on visibility change only
-  useEffect(()=>{
-    if(!activeCode)return;
-    const refresh=async()=>{
-      if(document.visibilityState==="visible"){
-        try{const data=await dbLoad(activeCode);if(data)setTripData(data);}catch{}
-      }
-    };
-    document.addEventListener("visibilitychange",refresh);
-    return()=>document.removeEventListener("visibilitychange",refresh);
-  },[activeCode]);
-
   const subscribeTrip=useCallback((code)=>{
     if(channelRef.current)sb.removeChannel(channelRef.current);
     const justSavedRef={current:0};
@@ -302,9 +272,7 @@ function App(){
       saveTimerRef.current=setTimeout(async()=>{
         try{
           // Always save latest state (tripDataRef.current), not stale next
-          const toSave=tripDataRef.current||next;
-          if(channelRef.current?._justSaved)channelRef.current._justSaved.current=Date.now();
-          await dbSave(activeCode,toSave);
+          await dbSave(activeCode,next);
           setSyncStatus("saved");setTimeout(()=>setSyncStatus(""),2000);
         }catch{setSyncStatus("error");}
       },600);
