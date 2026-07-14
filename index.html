@@ -221,6 +221,44 @@ function App(){
   const tripDataRef=useRef(null);
   useEffect(()=>{tripDataRef.current=tripData;},[tripData]);
 
+  // Re-fetch and re-subscribe when app comes back to foreground (PWA fix)
+  useEffect(()=>{
+    const handleVisibility=async()=>{
+      if(document.visibilityState==="visible"&&activeCode){
+        try{
+          const data=await dbLoad(activeCode);
+          if(data)setTripData(data);
+          subscribeTrip(activeCode);
+        }catch{}
+      }
+    };
+    document.addEventListener("visibilitychange",handleVisibility);
+    return()=>document.removeEventListener("visibilitychange",handleVisibility);
+  },[activeCode,subscribeTrip]);
+
+  // Polling fallback every 10s (for PWA mode where WebSocket is unreliable)
+  useEffect(()=>{
+    if(!activeCode)return;
+    const interval=setInterval(async()=>{
+      try{
+        const data=await dbLoad(activeCode);
+        if(!data)return;
+        setTripData(prev=>{
+          if(!prev)return data;
+          const localIds=new Set((prev.items||[]).map(i=>i.id));
+          const remoteIds=new Set((data.items||[]).map(i=>i.id));
+          const hasNew=(data.items||[]).some(i=>!localIds.has(i.id));
+          const hasRemoved=(prev.items||[]).some(i=>!remoteIds.has(i.id));
+          const membersChanged=JSON.stringify(data.members)!==JSON.stringify(prev.members);
+          if(!hasNew&&!hasRemoved&&!membersChanged)return prev;
+          const pending=(prev.items||[]).filter(i=>!remoteIds.has(i.id));
+          return{...data,items:[...(data.items||[]),...pending]};
+        });
+      }catch{}
+    },10000);
+    return()=>clearInterval(interval);
+  },[activeCode]);
+
   const subscribeTrip=useCallback((code)=>{
     if(channelRef.current)sb.removeChannel(channelRef.current);
     const justSavedRef={current:0};
@@ -609,7 +647,10 @@ function TripScreen({trip,code,rates,syncStatus,onBack,onUpdate}){
     h("div",{style:{background:"#1e293b",padding:"20px 16px 0",position:"sticky",top:0,zIndex:10}},
       h("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}},
         btn("‹ 返回",onBack,{background:"none",color:"#38bdf8",fontSize:15,padding:0,fontWeight:600}),
-        h("div",{style:{display:"flex",alignItems:"center",gap:10}},
+        h("div",{style:{display:"flex",alignItems:"center",gap:12}},
+          btn("↻",async()=>{
+            try{const data=await dbLoad(code);if(data)onUpdate(()=>data);}catch{}
+          },{background:"rgba(255,255,255,.1)",color:"#94a3b8",borderRadius:8,padding:"4px 10px",fontSize:18}),
           syncStatus&&h("div",{style:{width:8,height:8,borderRadius:"50%",background:syncColor}}),
           items.length>0&&h("div",{style:{textAlign:"right"}},
             h("div",{style:{color:"#64748b",fontSize:11}},items.length+" 筆 · 合計"),
