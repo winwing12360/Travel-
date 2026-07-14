@@ -130,21 +130,45 @@ function PieChart({name,memberColor,items,cats}){
 }
 
 /* ── Who Am I Panel ── */
-function WhoAmIPanel({onConfirm}){
+function WhoAmIPanel({onConfirm,members}){
   const[name,setName]=useState("");
+  const[addNew,setAddNew]=useState(!members||members.length===0);
   return h("div",{style:{position:"fixed",inset:0,background:"rgba(0,0,0,.65)",zIndex:200,display:"flex",alignItems:"flex-end"}},
     h("div",{style:{width:"100%",background:"#fff",borderRadius:"24px 24px 0 0",padding:28,paddingBottom:44}},
-      h("div",{style:{fontWeight:800,fontSize:20,color:"#0f172a",marginBottom:6}},"你的名字是？"),
-      h("div",{style:{fontSize:13,color:"#64748b",lineHeight:1.6,marginBottom:20}},"輸入後會加入此行程的成員，記帳時預設由你付款。"),
-      h("input",{autoFocus:true,value:name,onChange:e=>setName(e.target.value),
-        onKeyDown:e=>e.key==="Enter"&&name.trim()&&onConfirm(name.trim()),
-        placeholder:"例：媽媽、小明、阿嬤…",
-        style:{width:"100%",border:"2px solid #e2e8f0",borderRadius:14,padding:"14px 16px",fontSize:17,outline:"none",color:"#0f172a",marginBottom:16,boxSizing:"border-box"}}),
-      h("button",{onClick:()=>name.trim()&&onConfirm(name.trim()),disabled:!name.trim(),
-        style:{width:"100%",padding:"14px 0",border:"none",borderRadius:14,
-          background:name.trim()?"#1a2744":"#e2e8f0",
-          color:name.trim()?"#fff":"#94a3b8",fontWeight:700,fontSize:16,cursor:"pointer"}},
-        "加入行程")
+      h("div",{style:{fontWeight:800,fontSize:20,color:"#0f172a",marginBottom:6}},"你是哪位？"),
+      h("div",{style:{fontSize:13,color:"#64748b",lineHeight:1.6,marginBottom:20}},"選擇你的名字，或新增自己加入行程。"),
+      /* Existing members */
+      (members||[]).length>0&&h("div",null,
+        h("div",{style:{fontSize:11,color:"#94a3b8",fontWeight:600,marginBottom:10}})  ,
+        h("div",{style:{display:"flex",flexDirection:"column",gap:10,marginBottom:16}},
+          (members||[]).map((m,i)=>
+            h("button",{key:m,onClick:()=>onConfirm(m),
+              style:{padding:"14px 20px",border:"2px solid",borderColor:COLORS[i%COLORS.length],
+                borderRadius:14,background:"#fff",color:"#1e293b",fontWeight:700,fontSize:16,
+                cursor:"pointer",textAlign:"left",display:"flex",alignItems:"center",gap:12}},
+              h("div",{style:{width:12,height:12,borderRadius:"50%",background:COLORS[i%COLORS.length]}}),m
+            )
+          )
+        ),
+        !addNew&&h("button",{onClick:()=>setAddNew(true),
+          style:{width:"100%",padding:"11px 0",border:"1.5px dashed #e2e8f0",borderRadius:12,
+            background:"none",color:"#64748b",fontSize:14,cursor:"pointer",marginBottom:8}},
+          "＋ 我不在列表裡，新增名字")
+      ),
+      /* Add new */
+      addNew&&h("div",null,
+        (members||[]).length>0&&h("div",{style:{fontSize:12,color:"#94a3b8",marginBottom:8}},"新增名字："),
+        h("input",{autoFocus:true,value:name,onChange:e=>setName(e.target.value),
+          onKeyDown:e=>e.key==="Enter"&&name.trim()&&onConfirm(name.trim()),
+          placeholder:"例：媽媽、小明…",
+          style:{width:"100%",border:"2px solid #e2e8f0",borderRadius:14,padding:"14px 16px",
+            fontSize:17,outline:"none",color:"#0f172a",marginBottom:16,boxSizing:"border-box"}}),
+        h("button",{onClick:()=>name.trim()&&onConfirm(name.trim()),disabled:!name.trim(),
+          style:{width:"100%",padding:"14px 0",border:"none",borderRadius:14,
+            background:name.trim()?"#1a2744":"#e2e8f0",
+            color:name.trim()?"#fff":"#94a3b8",fontWeight:700,fontSize:16,cursor:"pointer"}},
+          "加入行程")
+      )
     )
   );
 }
@@ -308,7 +332,7 @@ function App(){
       onOpen:openTrip,onJoin:joinTrip,onCreate:createTrip,
       onRemove:code=>saveMyTrips(myTrips.filter(t=>t.code!==code))
     }),
-    whoAmI&&h(WhoAmIPanel,{
+    whoAmI&&h(WhoAmIPanel,{members:whoAmI.data?.members||[],
       onConfirm:async(name)=>{
         const{code,data}=whoAmI;
         localStorage.setItem("tl-who-"+code,name);
