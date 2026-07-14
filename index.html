@@ -57,7 +57,14 @@ const CAT_COLORS=["#0ea5e9","#f59e0b","#10b981","#f43f5e","#8b5cf6","#06b6d4","#
 const DEFAULT_CATS=["餐飲","大人購物","兒童用品","紀念品","交通","住宿","門票","其他"];
 
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,6);
-const fmtR=r=>r==null?"—":r<1?r.toFixed(4):r.toFixed(2);
+const fmtR=r=>{
+  if(r==null)return"—";
+  if(r<0.001)return r.toFixed(6);
+  if(r<0.1)return r.toFixed(5);
+  if(r<1)return r.toFixed(4);
+  if(r<10)return r.toFixed(3);
+  return r.toFixed(2);
+};
 const mc=(trip,name)=>COLORS[trip.members.indexOf(name)%COLORS.length]||"#94a3b8";
 const fmtT=dt=>{if(!dt)return"";const d=new Date(dt);return`${d.getMonth()+1}/${d.getDate()} ${d.getHours()}:${String(d.getMinutes()).padStart(2,"0")}`;};
 const ciOf=code=>CUR.find(c=>c.code===code);
@@ -161,7 +168,12 @@ function App(){
       .then(r=>r.json()).then(d=>{
         const r={};CUR.forEach(c=>{if(d.twd[c.key])r[c.code]=1/d.twd[c.key];});
         setLiveRates(r);
-      }).catch(()=>{});
+      }).catch(()=>{
+        fetch("https://open.er-api.com/v6/latest/TWD")
+          .then(r=>r.json()).then(d=>{
+            if(d.rates){const r={};CUR.forEach(c=>{if(d.rates[c.code])r[c.code]=1/d.rates[c.code];});setLiveRates(r);}
+          }).catch(()=>{});
+      });
   },[]);
 
   const saveMyTrips=trips=>{setMyTrips(trips);localStorage.setItem("tl-trips",JSON.stringify(trips));};
@@ -398,18 +410,13 @@ function HomeScreen({trips,loading,onOpen,onJoin,onCreate,onRemove}){
       ),
       trips.map(trip=>{
         const dateStr=fmtTripDate(trip.startDate,trip.endDate);
-        const thumbColors=[
-          ["#1e3a5f","#3b82f6"],["#1a3a2e","#10b981"],["#3b1a1a","#ef4444"],
-          ["#2d1a3b","#8b5cf6"],["#1a2e3b","#0ea5e9"],["#3b2a0a","#f59e0b"]
-        ];
-        const tc=thumbColors[trips.indexOf(trip)%thumbColors.length];
         return h("div",{key:trip.code,style:{background:"#fff",borderRadius:20,marginBottom:12,boxShadow:"0 2px 8px rgba(0,0,0,.06)",overflow:"hidden"}},
           h("div",{onClick:()=>{setDelCode(null);onOpen(trip.code);},style:{padding:"14px 16px",display:"flex",alignItems:"center",gap:14,cursor:"pointer"}},
-            /* Emoji thumbnail */
+            /* Emoji thumbnail — plain white, no gradient */
             h("div",{style:{
               width:72,height:72,borderRadius:14,flexShrink:0,
-              background:`linear-gradient(135deg,${tc[0]},${tc[1]})`,
-              display:"flex",alignItems:"center",justifyContent:"center",fontSize:32
+              background:"#f1f5f9",
+              display:"flex",alignItems:"center",justifyContent:"center",fontSize:40
             }},trip.emoji),
             /* Info */
             h("div",{style:{flex:1,minWidth:0}},
@@ -669,6 +676,10 @@ function TripScreen({trip,code,rates,syncStatus,onBack,onUpdate}){
             :h("span",{style:{color:"#cbd5e1",fontSize:13}},"輸入金額即時預覽台幣")
         )
       )
+    ),
+
+    h("div",{style:{textAlign:"center",padding:"16px 0 4px",color:"#cbd5e1",fontSize:11}},
+      "senbei.store"
     ),
 
     /* Items grouped by category */
