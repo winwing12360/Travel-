@@ -4,23 +4,38 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
 <title>旅遊記帳</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
 <style>
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;margin:0;padding:0}
 body{font-family:-apple-system,BlinkMacSystemFont,sans-serif;background:#f0f4f8}
 textarea{font-family:inherit}
-input[type=number]::-webkit-inner-spin-button,
-input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none}
+input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none}
 @keyframes spin{from{transform:rotate(0)}to{transform:rotate(360deg)}}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
 </style>
 </head>
 <body>
-<div id="root"><div style="display:flex;align-items:center;justify-content:center;height:100vh;background:#1e293b;color:#94a3b8;font-family:system-ui;font-size:15px">載入中…</div></div>
+<div id="root"><div style="display:flex;align-items:center;justify-content:center;height:100vh;background:#1e293b;color:#94a3b8;font-family:system-ui">載入中…</div></div>
 <script>
 'use strict';
-const{useState,useEffect,useRef}=React;
+const{useState,useEffect,useRef,useCallback}=React;
 const h=React.createElement;
+
+const SURL='https://czykkhaoqejzcoltncea.supabase.co';
+const SKEY='sb_publishable_cELo2lEjjEWlvmI7HQJDtA_gYqI94kr';
+const sb=supabase.createClient(SURL,SKEY);
+
+async function dbLoad(code){
+  const{data,error}=await sb.from('trips').select('data').eq('invite_code',code).single();
+  if(error)throw error;
+  return data?.data||null;
+}
+async function dbSave(code,data){
+  const{error}=await sb.from('trips').upsert({invite_code:code,data,updated_at:new Date().toISOString()},{onConflict:'invite_code'});
+  if(error)throw error;
+}
 
 const CUR=[
   {code:"JPY",name:"日圓",flag:"🇯🇵",sym:"¥",key:"jpy"},
@@ -32,223 +47,318 @@ const CUR=[
 ];
 const EMOJIS=["✈️","🇯🇵","🇰🇷","🇨🇳","🇭🇰","🇺🇸","🇫🇷","🇩🇪","🇮🇹","🇹🇭","🇸🇬","🏖️","🗺️","🎌","🌏","🏔️","🛳️","🎡","🏕️","🎢"];
 const COLORS=["#0ea5e9","#f59e0b","#10b981","#f43f5e","#8b5cf6","#06b6d4","#ec4899","#14b8a6"];
+const CAT_COLORS=["#0ea5e9","#f59e0b","#10b981","#f43f5e","#8b5cf6","#06b6d4","#ec4899","#14b8a6","#64748b","#84cc16"];
+const DEFAULT_CATS=["餐飲","大人購物","兒童用品","紀念品","交通","住宿","門票","其他"];
+
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,6);
 const fmtR=r=>r==null?"—":r<1?r.toFixed(4):r.toFixed(2);
 const mc=(trip,name)=>COLORS[trip.members.indexOf(name)%COLORS.length]||"#94a3b8";
 const fmtT=dt=>{if(!dt)return"";const d=new Date(dt);return`${d.getMonth()+1}/${d.getDate()} ${d.getHours()}:${String(d.getMinutes()).padStart(2,"0")}`;};
-const ci=code=>CUR.find(c=>c.code===code);
+const ciOf=code=>CUR.find(c=>c.code===code);
+const catColor=(cats,name)=>CAT_COLORS[cats.indexOf(name)%CAT_COLORS.length]||"#64748b";
+function genCode(){const c="ABCDEFGHJKLMNPQRSTUVWXYZ23456789";return Array.from({length:6},()=>c[Math.floor(Math.random()*c.length)]).join('');}
 
-async function compress(file){
-  return new Promise((res,rej)=>{
-    const img=new Image(),url=URL.createObjectURL(file);
-    img.onload=()=>{
-      URL.revokeObjectURL(url);
-      const MAX=1600,sc=Math.min(MAX/img.width,MAX/img.height,1);
-      const w=Math.round(img.width*sc),hh=Math.round(img.height*sc);
-      const cv=document.createElement("canvas");cv.width=w;cv.height=hh;
-      cv.getContext("2d").drawImage(img,0,0,w,hh);
-      cv.toBlob(blob=>{
-        if(!blob){rej(new Error("壓縮失敗"));return;}
-        const r=new FileReader();
-        r.onload=()=>res(r.result.split(",")[1]);
-        r.onerror=rej;r.readAsDataURL(blob);
-      },"image/jpeg",0.82);
-    };
-    img.onerror=()=>{URL.revokeObjectURL(url);rej(new Error("圖片讀取失敗"));};
-    img.src=url;
+/* ── Pie Chart ── */
+function PieChart({name,memberColor,items,cats}){
+  const mine=items.filter(i=>i.paidBy===name);
+  if(!mine.length)return null;
+  const catTotals={};
+  mine.forEach(i=>{const c=i.category||"其他";catTotals[c]=(catTotals[c]||0)+i.total;});
+  const total=Object.values(catTotals).reduce((s,v)=>s+v,0);
+  const entries=Object.entries(catTotals).sort((a,b)=>b[1]-a[1]);
+  const SZ=130,cx=65,cy=65,R=56,RIN=34;
+  let angle=-Math.PI/2;
+  const slices=entries.map(([cat,amt])=>{
+    const ratio=amt/total;
+    const sa=angle,ea=angle+ratio*Math.PI*2-(entries.length>1?0.02:0);
+    angle+=ratio*Math.PI*2;
+    const col=catColor(cats,cat);
+    if(entries.length===1)return{cat,amt,col,full:true};
+    const cos=Math.cos,sin=Math.sin;
+    const x1=cx+R*cos(sa),y1=cy+R*sin(sa);
+    const x2=cx+R*cos(ea),y2=cy+R*sin(ea);
+    const ix1=cx+RIN*cos(sa),iy1=cy+RIN*sin(sa);
+    const ix2=cx+RIN*cos(ea),iy2=cy+RIN*sin(ea);
+    const large=ea-sa>Math.PI?1:0;
+    const d=`M${x1.toFixed(1)} ${y1.toFixed(1)} A${R} ${R} 0 ${large} 1 ${x2.toFixed(1)} ${y2.toFixed(1)} L${ix2.toFixed(1)} ${iy2.toFixed(1)} A${RIN} ${RIN} 0 ${large} 0 ${ix1.toFixed(1)} ${iy1.toFixed(1)}Z`;
+    return{cat,amt,col,d};
   });
-}
-
-/* ── App ── */
-function App(){
-  const[view,setView]=useState("home");
-  const[trips,setTrips]=useState([]);
-  const[activeId,setActiveId]=useState(null);
-  const[loaded,setLoaded]=useState(false);
-  const[showNew,setShowNew]=useState(false);
-  const[rates,setRates]=useState({});
-  const[rateDate,setRateDate]=useState("");
-  const[apiKey,setApiKey]=useState("");
-  const[showApi,setShowApi]=useState(false);
-
-  useEffect(()=>{
-    try{const s=localStorage.getItem("tl2");if(s)setTrips(JSON.parse(s)||[]);}catch{}
-    setApiKey(localStorage.getItem("tl-key")||"");
-    setLoaded(true);
-    fetch("https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies/twd.json")
-      .then(r=>r.json()).then(d=>{
-        const r={};CUR.forEach(c=>{if(d.twd[c.key])r[c.code]=1/d.twd[c.key];});
-        setRates(r);setRateDate(d.date);
-      }).catch(()=>{});
-  },[]);
-
-  useEffect(()=>{
-    if(!loaded)return;
-    try{localStorage.setItem("tl2",JSON.stringify(trips));}catch{}
-  },[trips,loaded]);
-
-  const saveKey=k=>{setApiKey(k);localStorage.setItem("tl-key",k);};
-  const upd=(id,fn)=>setTrips(p=>p.map(t=>t.id===id?fn(t):t));
-  const active=trips.find(t=>t.id===activeId);
-
-  if(!loaded)return h("div",{style:{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",background:"#1e293b",color:"#94a3b8"}},"載入中…");
-
-  if(view==="trip"&&active)return h(Trip,{
-    trip:active,rates,rateDate,apiKey,
-    onBack:()=>setView("home"),
-    onUpd:fn=>upd(activeId,fn),
-    onNeedKey:()=>setShowApi(true)
-  });
-
-  return h("div",null,
-    h(Home,{trips,showNew,
-      onNew:()=>setShowNew(true),onHide:()=>setShowNew(false),
-      onOpen:id=>{setActiveId(id);setView("trip");},
-      onDel:id=>setTrips(p=>p.filter(t=>t.id!==id)),
-      onCreate:data=>{
-        const t={id:uid(),created:new Date().toISOString().slice(0,10),items:[],cRates:{},...data};
-        setTrips(p=>[t,...p]);setActiveId(t.id);setShowNew(false);setView("trip");
-      },
-      hasKey:!!apiKey,onKey:()=>setShowApi(true)
-    }),
-    showApi&&h(ApiSetup,{cur:apiKey,onSave:k=>{saveKey(k);setShowApi(false);},onClose:()=>setShowApi(false)})
-  );
-}
-
-/* ── API Key Setup ── */
-function ApiSetup({cur,onSave,onClose}){
-  const[k,setK]=useState(cur);
-  const o={position:"fixed",inset:0,background:"rgba(0,0,0,.65)",zIndex:200,display:"flex",alignItems:"flex-end"};
-  const b={width:"100%",background:"#fff",borderRadius:"20px 20px 0 0",padding:24,paddingBottom:40};
-  return h("div",{style:o},
-    h("div",{style:b},
-      h("div",{style:{fontWeight:700,fontSize:17,color:"#1e293b",marginBottom:6}},"Anthropic API Key"),
-      h("div",{style:{fontSize:12,color:"#64748b",lineHeight:1.7,marginBottom:16}},
-        "前往 ",h("a",{href:"https://console.anthropic.com",target:"_blank",style:{color:"#0ea5e9"}},"console.anthropic.com")," 取得 Key，僅存本機。"),
-      h("input",{type:"password",value:k,onChange:e=>setK(e.target.value),placeholder:"sk-ant-...",
-        style:{width:"100%",border:"1.5px solid #e2e8f0",borderRadius:12,padding:"12px 14px",fontSize:14,outline:"none",marginBottom:16,fontFamily:"monospace"}}),
-      h("div",{style:{display:"flex",gap:10}},
-        h("button",{onClick:onClose,style:{flex:1,padding:"12px 0",border:"1.5px solid #e2e8f0",borderRadius:12,background:"#fff",color:"#64748b",fontWeight:600,fontSize:14,cursor:"pointer"}},"取消"),
-        h("button",{onClick:()=>onSave(k.trim()),disabled:!k.trim(),
-          style:{flex:2,padding:"12px 0",border:"none",borderRadius:12,background:k.trim()?"#1e293b":"#e2e8f0",color:k.trim()?"#fff":"#94a3b8",fontWeight:700,fontSize:14,cursor:"pointer"}},"儲存")
+  const fmtAmt=v=>v>=10000?Math.round(v/1000)+"k":v.toLocaleString();
+  return h("div",{style:{background:"#fff",borderRadius:16,padding:"14px 16px",marginTop:10,boxShadow:"0 1px 3px rgba(0,0,0,.05)"}},
+    h("div",{style:{display:"flex",alignItems:"center",gap:8,marginBottom:12}},
+      h("div",{style:{width:10,height:10,borderRadius:"50%",background:memberColor,flexShrink:0}}),
+      h("span",{style:{fontWeight:700,color:"#1e293b",fontSize:15}},name),
+      h("span",{style:{color:"#64748b",fontSize:13,marginLeft:4}},"NT$"+total.toLocaleString())
+    ),
+    h("div",{style:{display:"flex",alignItems:"center",gap:14}},
+      h("svg",{width:SZ,height:SZ,viewBox:`0 0 ${SZ} ${SZ}`,style:{flexShrink:0}},
+        slices[0]?.full
+          ?h("g",null,h("circle",{cx,cy,r:R,fill:slices[0].col}),h("circle",{cx,cy,r:RIN,fill:"#fff"}))
+          :slices.map((s,i)=>h("path",{key:i,d:s.d,fill:s.col})),
+        h("circle",{cx,cy,r:RIN,fill:"#fff"}),
+        h("text",{x:cx,y:cy-5,textAnchor:"middle",fontSize:9,fill:"#94a3b8"},"合計"),
+        h("text",{x:cx,y:cy+9,textAnchor:"middle",fontSize:12,fontWeight:"bold",fill:"#1e293b"},fmtAmt(total))
+      ),
+      h("div",{style:{flex:1,minWidth:0}},
+        entries.map(([cat,amt])=>{
+          const col=catColor(cats,cat);const pct=Math.round(amt/total*100);
+          return h("div",{key:cat,style:{display:"flex",alignItems:"center",gap:6,marginBottom:7}},
+            h("div",{style:{width:8,height:8,borderRadius:2,background:col,flexShrink:0}}),
+            h("div",{style:{flex:1,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",fontSize:12,color:"#334155"}},cat),
+            h("div",{style:{textAlign:"right",flexShrink:0}},
+              h("span",{style:{fontSize:12,fontWeight:700,color:"#1e293b"}},"NT$"+amt.toLocaleString()),
+              h("span",{style:{fontSize:10,color:"#94a3b8",marginLeft:4}},pct+"%")
+            )
+          );
+        })
       )
     )
   );
 }
 
+/* ── App ── */
+function App(){
+  const[view,setView]=useState("home");
+  const[myTrips,setMyTrips]=useState([]);
+  const[activeCode,setActiveCode]=useState(null);
+  const[tripData,setTripData]=useState(null);
+  const[liveRates,setLiveRates]=useState({});
+  const[loading,setLoading]=useState(false);
+  const[syncStatus,setSyncStatus]=useState("");
+  const channelRef=useRef(null);
+  const saveTimerRef=useRef(null);
+
+  useEffect(()=>{
+    try{const s=localStorage.getItem("tl-trips");if(s)setMyTrips(JSON.parse(s)||[]);}catch{}
+    fetch("https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies/twd.json")
+      .then(r=>r.json()).then(d=>{
+        const r={};CUR.forEach(c=>{if(d.twd[c.key])r[c.code]=1/d.twd[c.key];});
+        setLiveRates(r);
+      }).catch(()=>{});
+  },[]);
+
+  const saveMyTrips=trips=>{setMyTrips(trips);localStorage.setItem("tl-trips",JSON.stringify(trips));};
+
+  const subscribeTrip=useCallback((code)=>{
+    if(channelRef.current)sb.removeChannel(channelRef.current);
+    const ch=sb.channel("trip:"+code)
+      .on("postgres_changes",{event:"UPDATE",schema:"public",table:"trips",filter:`invite_code=eq.${code}`},
+        payload=>{
+          if(payload.new?.data){
+            setTripData(prev=>{
+              const remoteT=new Date(payload.new.updated_at).getTime();
+              const localT=prev?._savedAt||0;
+              if(remoteT>localT+500)return{...payload.new.data,_savedAt:localT};
+              return prev;
+            });
+          }
+        })
+      .subscribe();
+    channelRef.current=ch;
+  },[]);
+
+  const openTrip=async(code)=>{
+    setLoading(true);
+    try{
+      const data=await dbLoad(code);
+      if(!data)throw new Error("找不到行程，請確認邀請碼");
+      setTripData(data);setActiveCode(code);setView("trip");subscribeTrip(code);
+    }catch(e){alert(e.message);}
+    finally{setLoading(false);}
+  };
+
+  const updateTrip=useCallback((fn)=>{
+    setTripData(prev=>{
+      const next=fn(prev);
+      clearTimeout(saveTimerRef.current);
+      setSyncStatus("saving");
+      saveTimerRef.current=setTimeout(async()=>{
+        try{
+          const ts=Date.now();
+          await dbSave(activeCode,{...next,_savedAt:ts});
+          setTripData(p=>p?{...p,_savedAt:ts}:p);
+          setSyncStatus("saved");setTimeout(()=>setSyncStatus(""),2000);
+        }catch{setSyncStatus("error");}
+      },600);
+      return next;
+    });
+  },[activeCode]);
+
+  const createTrip=async(meta)=>{
+    const code=genCode();
+    const data={...meta,items:[],cRates:{},categories:[...DEFAULT_CATS],created:new Date().toISOString().slice(0,10)};
+    setLoading(true);
+    try{
+      await dbSave(code,data);
+      saveMyTrips([{code,...meta,created:data.created},...myTrips]);
+      setTripData(data);setActiveCode(code);setView("trip");subscribeTrip(code);
+    }catch(e){alert("建立失敗: "+e.message);}
+    finally{setLoading(false);}
+  };
+
+  const joinTrip=async(code)=>{
+    const clean=code.trim().toUpperCase();
+    if(myTrips.find(t=>t.code===clean)){openTrip(clean);return;}
+    setLoading(true);
+    try{
+      const data=await dbLoad(clean);
+      if(!data)throw new Error("找不到行程，請確認邀請碼");
+      saveMyTrips([...myTrips,{code:clean,name:data.name,emoji:data.emoji,members:data.members,created:data.created}]);
+      setTripData(data);setActiveCode(clean);setView("trip");subscribeTrip(clean);
+    }catch(e){alert(e.message);}
+    finally{setLoading(false);}
+  };
+
+  const leaveView=()=>{
+    if(channelRef.current){sb.removeChannel(channelRef.current);channelRef.current=null;}
+    clearTimeout(saveTimerRef.current);
+    setView("home");setActiveCode(null);setTripData(null);setSyncStatus("");
+  };
+
+  if(view==="trip"&&tripData&&activeCode)return h(TripScreen,{
+    trip:tripData,code:activeCode,rates:liveRates,syncStatus,
+    onBack:leaveView,onUpdate:updateTrip
+  });
+
+  return h("div",null,
+    h(HomeScreen,{trips:myTrips,loading,
+      onOpen:openTrip,onJoin:joinTrip,onCreate:createTrip,
+      onRemove:code=>saveMyTrips(myTrips.filter(t=>t.code!==code))
+    }),
+    loading&&h("div",{style:{position:"fixed",inset:0,background:"rgba(0,0,0,.4)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:300}},
+      h("div",{style:{background:"#1e293b",color:"#94a3b8",padding:"20px 32px",borderRadius:16,fontSize:14}},"載入中…")
+    )
+  );
+}
+
 /* ── Home ── */
-function Home({trips,showNew,onNew,onHide,onOpen,onDel,onCreate,hasKey,onKey}){
+function HomeScreen({trips,loading,onOpen,onJoin,onCreate,onRemove}){
+  const[showNew,setShowNew]=useState(false);
+  const[showJoin,setShowJoin]=useState(false);
+  const[joinCode,setJoinCode]=useState("");
   const[name,setName]=useState("");
   const[emoji,setEmoji]=useState("✈️");
   const[members,setMembers]=useState([""]);
-  const[delId,setDelId]=useState(null);
-  const tot=t=>t.items.reduce((s,i)=>s+(i.total||0),0);
+  const[delCode,setDelCode]=useState(null);
+
   const create=()=>{
     if(!name.trim())return;
     const ms=members.filter(m=>m.trim()).map(m=>m.trim());
     onCreate({name:name.trim(),emoji,members:ms.length?ms:["我"]});
-    setName("");setEmoji("✈️");setMembers([""]);
+    setName("");setEmoji("✈️");setMembers([""]);setShowNew(false);
   };
-  const S={hd:{background:"#1e293b",padding:"48px 20px 20px"},
-    row:{display:"flex",justifyContent:"space-between",alignItems:"center"},
-    label:{color:"#94a3b8",fontSize:11,letterSpacing:1,textTransform:"uppercase"},
-    title:{color:"#f1f5f9",fontSize:24,fontWeight:800,marginTop:4}};
 
   return h("div",{style:{background:"#f0f4f8",minHeight:"100vh"}},
-    h("div",{style:S.hd},
-      h("div",{style:S.row},
-        h("div",null,h("div",{style:S.label},"旅遊記帳"),h("div",{style:S.title},"我的行程")),
-        h("div",{style:{display:"flex",gap:8,alignItems:"center"}},
-          h("button",{onClick:onKey,style:{background:"rgba(255,255,255,.1)",border:"none",borderRadius:10,padding:"8px 12px",color:hasKey?"#34d399":"#f59e0b",fontSize:13,cursor:"pointer",fontWeight:600}},hasKey?"🔑 Key 已設定":"🔑 設定 Key"),
-          !showNew&&h("button",{onClick:onNew,style:{background:"#38bdf8",border:"none",borderRadius:12,padding:"10px 18px",color:"#0f172a",fontWeight:700,fontSize:15,cursor:"pointer"}},"+ 新行程")
-        )
+    h("div",{style:{background:"#1e293b",padding:"48px 20px 20px"}},
+      h("div",{style:{marginBottom:16}},
+        h("div",{style:{color:"#94a3b8",fontSize:11,letterSpacing:1,textTransform:"uppercase"}},"旅遊記帳"),
+        h("div",{style:{color:"#f1f5f9",fontSize:24,fontWeight:800,marginTop:4}},"我的行程")
+      ),
+      h("div",{style:{display:"flex",gap:10}},
+        h("button",{onClick:()=>{setShowNew(p=>!p);setShowJoin(false);},
+          style:{flex:1,padding:"11px 0",border:"none",borderRadius:12,background:showNew?"#38bdf8":"rgba(255,255,255,.12)",color:showNew?"#0f172a":"#f1f5f9",fontWeight:700,fontSize:14,cursor:"pointer"}},
+          "＋ 建立行程"),
+        h("button",{onClick:()=>{setShowJoin(p=>!p);setShowNew(false);},
+          style:{flex:1,padding:"11px 0",border:"none",borderRadius:12,background:showJoin?"#38bdf8":"rgba(255,255,255,.12)",color:showJoin?"#0f172a":"#f1f5f9",fontWeight:700,fontSize:14,cursor:"pointer"}},
+          "🔗 輸入邀請碼")
       )
+    ),
+    showJoin&&h("div",{style:{margin:"16px 16px 0",background:"#fff",borderRadius:20,padding:18,boxShadow:"0 2px 8px rgba(0,0,0,.08)"}},
+      h("div",{style:{fontWeight:700,color:"#1e293b",fontSize:16,marginBottom:12}},"輸入邀請碼加入行程"),
+      h("input",{autoFocus:true,value:joinCode,onChange:e=>setJoinCode(e.target.value.toUpperCase()),
+        placeholder:"例：AB12CD",maxLength:6,
+        style:{width:"100%",border:"1.5px solid #e2e8f0",borderRadius:12,padding:"14px",fontSize:24,fontWeight:800,outline:"none",letterSpacing:8,textAlign:"center",color:"#1e293b",marginBottom:12}}),
+      h("button",{onClick:()=>{if(joinCode.length===6){onJoin(joinCode);setJoinCode("");setShowJoin(false);}},
+        disabled:joinCode.length!==6,
+        style:{width:"100%",padding:"13px 0",border:"none",borderRadius:12,background:joinCode.length===6?"#1e293b":"#e2e8f0",color:joinCode.length===6?"#fff":"#94a3b8",fontWeight:700,fontSize:15,cursor:"pointer"}},
+        "加入行程")
     ),
     showNew&&h("div",{style:{margin:"16px 16px 0",background:"#fff",borderRadius:20,padding:18,boxShadow:"0 2px 8px rgba(0,0,0,.08)"}},
       h("div",{style:{fontWeight:700,color:"#1e293b",fontSize:16,marginBottom:14}},"建立新行程"),
-      h("div",{style:{fontSize:12,color:"#94a3b8",fontWeight:600,marginBottom:8}},"圖示"),
       h("div",{style:{display:"flex",flexWrap:"wrap",gap:4,marginBottom:14}},
         EMOJIS.map(e=>h("button",{key:e,onClick:()=>setEmoji(e),style:{fontSize:20,padding:"4px 5px",borderRadius:8,border:"2px solid",borderColor:emoji===e?"#38bdf8":"transparent",background:emoji===e?"#f0f9ff":"transparent",cursor:"pointer"}},e))
       ),
-      h("div",{style:{fontSize:12,color:"#94a3b8",fontWeight:600,marginBottom:6}},"行程名稱"),
-      h("input",{autoFocus:true,value:name,onChange:e=>setName(e.target.value),placeholder:"例：9月名古屋行",
+      h("input",{autoFocus:true,value:name,onChange:e=>setName(e.target.value),placeholder:"行程名稱（例：9月名古屋行）",
         style:{width:"100%",border:"1.5px solid #e2e8f0",borderRadius:12,padding:"10px 14px",fontSize:15,outline:"none",marginBottom:14,color:"#1e293b"}}),
       h("div",{style:{fontSize:12,color:"#94a3b8",fontWeight:600,marginBottom:8}},"成員"),
       members.map((m,i)=>h("div",{key:i,style:{display:"flex",alignItems:"center",gap:8,marginBottom:8}},
         h("div",{style:{width:8,height:8,borderRadius:"50%",background:COLORS[i%COLORS.length],flexShrink:0}}),
         h("input",{value:m,onChange:e=>setMembers(p=>p.map((x,j)=>j===i?e.target.value:x)),
-          placeholder:["爸爸","媽媽","小寶","阿嬤","朋友A"][i]||`成員${i+1}`,
+          placeholder:["爸爸","媽媽","小寶","阿嬤"][i]||"成員",
           style:{flex:1,border:"1.5px solid #e2e8f0",borderRadius:10,padding:"8px 12px",fontSize:14,outline:"none",color:"#1e293b"}}),
         members.length>1&&h("button",{onClick:()=>setMembers(p=>p.filter((_,j)=>j!==i)),style:{background:"none",border:"none",color:"#94a3b8",fontSize:18,cursor:"pointer"}},"×")
       )),
       h("button",{onClick:()=>setMembers(p=>[...p,""]),style:{color:"#38bdf8",background:"none",border:"1.5px dashed #bae6fd",borderRadius:10,padding:"6px 14px",fontSize:13,cursor:"pointer",marginBottom:16,width:"100%"}},"+ 新增成員"),
       h("div",{style:{display:"flex",gap:10}},
-        h("button",{onClick:onHide,style:{flex:1,padding:"12px 0",border:"1.5px solid #e2e8f0",borderRadius:12,background:"#fff",color:"#64748b",fontWeight:600,fontSize:14,cursor:"pointer"}},"取消"),
+        h("button",{onClick:()=>setShowNew(false),style:{flex:1,padding:"12px 0",border:"1.5px solid #e2e8f0",borderRadius:12,background:"#fff",color:"#64748b",fontWeight:600,fontSize:14,cursor:"pointer"}},"取消"),
         h("button",{onClick:create,disabled:!name.trim(),style:{flex:2,padding:"12px 0",border:"none",borderRadius:12,background:name.trim()?"#1e293b":"#e2e8f0",color:name.trim()?"#fff":"#94a3b8",fontWeight:700,fontSize:14,cursor:"pointer"}},"建立行程")
       )
     ),
     h("div",{style:{padding:"16px 16px 40px"}},
-      trips.length===0&&!showNew&&h("div",{style:{textAlign:"center",padding:"64px 0",color:"#94a3b8"}},
+      trips.length===0&&!showNew&&!showJoin&&h("div",{style:{textAlign:"center",padding:"64px 0",color:"#94a3b8"}},
         h("div",{style:{fontSize:48,marginBottom:12}},"✈️"),
         h("div",{style:{fontSize:16,fontWeight:600,marginBottom:6}},"尚無行程"),
-        h("div",{style:{fontSize:13}},"點右上角「+ 新行程」開始記帳")
+        h("div",{style:{fontSize:13}},"點「建立行程」或輸入邀請碼加入")
       ),
-      trips.map(trip=>h("div",{key:trip.id,style:{background:"#fff",borderRadius:18,marginBottom:12,boxShadow:"0 1px 4px rgba(0,0,0,.06)",overflow:"hidden"}},
-        h("div",{onClick:()=>{setDelId(null);onOpen(trip.id);},style:{padding:"16px 18px",display:"flex",alignItems:"center",cursor:"pointer"}},
+      trips.map(trip=>h("div",{key:trip.code,style:{background:"#fff",borderRadius:18,marginBottom:12,boxShadow:"0 1px 4px rgba(0,0,0,.06)",overflow:"hidden"}},
+        h("div",{onClick:()=>onOpen(trip.code),style:{padding:"16px 18px",display:"flex",alignItems:"center",cursor:"pointer"}},
           h("div",{style:{fontSize:36,marginRight:14,lineHeight:1}},trip.emoji),
           h("div",{style:{flex:1,minWidth:0}},
             h("div",{style:{fontWeight:700,color:"#1e293b",fontSize:16}},trip.name),
-            h("div",{style:{color:"#94a3b8",fontSize:12,marginTop:3}},trip.members.join(" · ")+"　·　"+trip.items.length+" 筆"),
-            h("div",{style:{color:"#cbd5e1",fontSize:11,marginTop:2}},trip.created)
+            h("div",{style:{color:"#94a3b8",fontSize:12,marginTop:3}},trip.members?.join(" · ")||""),
+            h("div",{style:{marginTop:4}},h("span",{style:{background:"#f1f5f9",borderRadius:6,padding:"2px 8px",fontSize:11,color:"#64748b",fontWeight:700,letterSpacing:2}},trip.code))
           ),
-          h("div",{style:{fontWeight:800,color:"#1e293b",fontSize:18}},"NT$"+Math.round(tot(trip)).toLocaleString())
+          h("div",{style:{color:"#94a3b8",fontSize:20}},"›")
         ),
-        h("div",{style:{borderTop:"1px solid #f8fafc",padding:"8px 18px",display:"flex",justifyContent:"flex-end",gap:10}},
-          delId===trip.id
+        h("div",{style:{borderTop:"1px solid #f8fafc",padding:"8px 18px",display:"flex",justifyContent:"flex-end"}},
+          delCode===trip.code
             ?h("div",{style:{display:"flex",gap:8,alignItems:"center"}},
-                h("span",{style:{fontSize:12,color:"#64748b"}},"確定刪除？"),
-                h("button",{onClick:()=>setDelId(null),style:{fontSize:12,color:"#64748b",background:"none",border:"1px solid #e2e8f0",borderRadius:8,padding:"4px 12px",cursor:"pointer"}},"取消"),
-                h("button",{onClick:()=>{onDel(trip.id);setDelId(null);},style:{fontSize:12,color:"#fff",background:"#ef4444",border:"none",borderRadius:8,padding:"4px 12px",cursor:"pointer",fontWeight:600}},"刪除")
+                h("span",{style:{fontSize:12,color:"#64748b"}},"從清單移除？"),
+                h("button",{onClick:()=>setDelCode(null),style:{fontSize:12,color:"#64748b",background:"none",border:"1px solid #e2e8f0",borderRadius:8,padding:"4px 12px",cursor:"pointer"}},"取消"),
+                h("button",{onClick:()=>{onRemove(trip.code);setDelCode(null);},style:{fontSize:12,color:"#fff",background:"#ef4444",border:"none",borderRadius:8,padding:"4px 12px",cursor:"pointer",fontWeight:600}},"移除")
               )
-            :h("button",{onClick:e=>{e.stopPropagation();setDelId(trip.id);},style:{fontSize:12,color:"#fca5a5",background:"none",border:"none",cursor:"pointer"}},"刪除行程")
+            :h("button",{onClick:e=>{e.stopPropagation();setDelCode(trip.code);},style:{fontSize:12,color:"#fca5a5",background:"none",border:"none",cursor:"pointer"}},"從我的清單移除")
         )
       ))
     )
   );
 }
 
-/* ── Trip ── */
-function Trip({trip,rates,rateDate,apiKey,onBack,onUpd,onNeedKey}){
+/* ── Trip Screen ── */
+function TripScreen({trip,code,rates,syncStatus,onBack,onUpdate}){
+  const cats=trip.categories||DEFAULT_CATS;
   const[cur,setCur]=useState("JPY");
   const[amt,setAmt]=useState("");
   const[iName,setIName]=useState("");
+  const[cat,setCat]=useState(cats[0]||"餐飲");
   const[pay,setPay]=useState("cash");
   const[fee,setFee]=useState("1.5");
-  const[by,setBy]=useState(trip.members[0]||"我");
+  const[by,setBy]=useState(trip.members?.[0]||"我");
   const[editR,setEditR]=useState(false);
   const[rIn,setRIn]=useState("");
   const[inv,setInv]=useState(false);
-  const[scan,setScan]=useState(false);
-  const[msg,setMsg]=useState("");
-  const[showTxt,setShowTxt]=useState(false);
-  const[txt,setTxt]=useState("");
-  const[txLoading,setTxL]=useState(false);
   const[clr,setClr]=useState(false);
   const[eId,setEId]=useState(null);
   const[eName,setEN]=useState("");
   const[eAmt,setEA]=useState("");
-  const fRef=useRef();const aRef=useRef();const rRef=useRef();
+  const[eCat,setEC]=useState("");
+  const[showCode,setShowCode]=useState(false);
+  const[copied,setCopied]=useState(false);
+  const[showAddCat,setShowAddCat]=useState(false);
+  const[newCat,setNewCat]=useState("");
+  const[manageCats,setManageCats]=useState(false);
+  const aRef=useRef();const rRef=useRef();
 
   const lr=rates[cur];
-  const er=trip.cRates?.[cur]??lr;
-  const isCust=trip.cRates?.[cur]!=null;
+  const er=(trip.cRates||{})[cur]??lr;
+  const isCust=(trip.cRates||{})[cur]!=null;
   const dr=er?(inv?1/er:er):null;
   const dl=lr?(inv?1/lr:lr):null;
-  const cinfo=ci(cur);
+  const cinfo=ciOf(cur);
   const pAmt=parseFloat(amt);const pFee=parseFloat(fee)||0;
 
-  const setCR=r=>onUpd(t=>({...t,cRates:{...t.cRates,[cur]:r}}));
-  const clrCR=()=>onUpd(t=>{const c={...t.cRates};delete c[cur];return{...t,cRates:c};});
+  const setCR=r=>onUpdate(t=>({...t,cRates:{...(t.cRates||{}),[cur]:r}}));
+  const clrCR=()=>onUpdate(t=>{const c={...(t.cRates||{})};delete c[cur];return{...t,cRates:c};});
   const openR=()=>{setRIn(dr!=null?fmtR(dr):"");setEditR(true);setTimeout(()=>rRef.current?.focus(),50);};
   const confR=()=>{const v=parseFloat(rIn);if(!isNaN(v)&&v>0)setCR(inv?1/v:v);setEditR(false);};
   const togDir=()=>{if(editR&&rIn){const v=parseFloat(rIn);if(!isNaN(v)&&v>0)setRIn(fmtR(1/v));}setInv(p=>!p);};
@@ -258,123 +368,89 @@ function Trip({trip,rates,rateDate,apiKey,onBack,onUpd,onNeedKey}){
   const pFeeV=pBase!==null&&pay==="card"?Math.round(pBase*pFee/100):0;
   const pTot=pBase!==null?pBase+pFeeV:null;
 
+  const addCat=()=>{
+    const n=newCat.trim();if(!n)return;
+    if(cats.includes(n)){setCat(n);setShowAddCat(false);setNewCat("");return;}
+    onUpdate(t=>({...t,categories:[...(t.categories||DEFAULT_CATS),n]}));
+    setCat(n);setShowAddCat(false);setNewCat("");
+  };
+  const removeCat=name=>{
+    onUpdate(t=>({...t,
+      categories:(t.categories||DEFAULT_CATS).filter(c=>c!==name),
+      items:(t.items||[]).map(i=>i.category===name?{...i,category:"其他"}:i)
+    }));
+    if(cat===name)setCat(cats.filter(c=>c!==name)[0]||"其他");
+  };
+
   const add=()=>{
     if(!pAmt||pAmt<=0||!er)return;
     const base=pAmt*er;const{fee:f,total:tot}=calc(base,pay);
-    onUpd(t=>({...t,items:[...t.items,{id:uid(),name:iName.trim()||"品項",amount:pAmt,currency:cur,twd:Math.round(base),payMethod:pay,fee:f,total:tot,paidBy:by,datetime:new Date().toISOString()}]}));
+    onUpdate(t=>({...t,items:[...(t.items||[]),{id:uid(),category:cat,name:iName.trim(),amount:pAmt,currency:cur,twd:Math.round(base),payMethod:pay,fee:f,total:tot,paidBy:by,datetime:new Date().toISOString()}]}));
     setIName("");setAmt("");setTimeout(()=>aRef.current?.focus(),50);
   };
-  const del=id=>onUpd(t=>({...t,items:t.items.filter(i=>i.id!==id)}));
-  const startE=item=>{setEId(item.id);setEN(item.name);setEA(item.amount.toString());};
+  const del=id=>onUpdate(t=>({...t,items:(t.items||[]).filter(i=>i.id!==id)}));
+  const startE=item=>{setEId(item.id);setEN(item.name);setEA(item.amount.toString());setEC(item.category||cats[0]);};
   const cancelE=()=>setEId(null);
   const saveE=item=>{
     const na=parseFloat(eAmt);if(isNaN(na)||na<=0){cancelE();return;}
-    const ir=trip.cRates?.[item.currency]??rates[item.currency];if(!ir){cancelE();return;}
+    const ir=(trip.cRates||{})[item.currency]??rates[item.currency];if(!ir){cancelE();return;}
     const base=na*ir;const f=item.payMethod==="card"?Math.round(base*pFee/100):0;
-    onUpd(t=>({...t,items:t.items.map(i=>i.id===item.id?{...i,name:eName.trim()||i.name,amount:na,twd:Math.round(base),fee:f,total:Math.round(base)+f}:i)}));
+    onUpdate(t=>({...t,items:(t.items||[]).map(i=>i.id===item.id?{...i,name:eName.trim(),amount:na,category:eCat,twd:Math.round(base),fee:f,total:Math.round(base)+f}:i)}));
     setEId(null);
   };
 
-  const callAPI=async(messages)=>{
-    if(!apiKey){onNeedKey();throw new Error("請先設定 API Key");}
-    const r=await fetch("https://api.anthropic.com/v1/messages",{
-      method:"POST",
-      headers:{"Content-Type":"application/json","x-api-key":apiKey,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
-      body:JSON.stringify({model:"claude-sonnet-4-6",max_tokens:1000,messages})
-    });
-    const body=await r.text();
-    let d;try{d=JSON.parse(body);}catch{throw new Error("回應格式錯誤: "+body.slice(0,60));}
-    if(d.error)throw new Error("API: "+d.error.message);
-    return(d.content||[]).map(c=>c.text||"").join("");
-  };
-
-  const parseItems=async txt=>{
-    const reply=await callAPI([{role:"user",content:`以下是收據文字，辨識所有品項名稱（翻譯成繁體中文）、金額與貨幣(JPY/CNY/KRW/USD/HKD/EUR)。只回覆JSON：{"currency":"KRW","items":[{"name":"品名","amount":1234}]}\n\n${txt}`}]);
-    const m=reply.match(/\{[\s\S]*\}/);if(!m)throw new Error("格式解析失敗");
-    const p=JSON.parse(m[0]);
-    const dc=p.currency?.toUpperCase();
-    const uc=CUR.find(c=>c.code===dc)?dc:cur;
-    const ur=trip.cRates?.[uc]??rates[uc]??er;
-    if(p.items?.length>0){
-      if(CUR.find(c=>c.code===dc))setCur(dc);
-      const ni=p.items.map(item=>{const base=ur?item.amount*ur:0;const{fee:f,total:tot}=calc(base,pay);return{id:uid(),name:item.name||"未知品項",amount:item.amount,currency:uc,twd:Math.round(base),payMethod:pay,fee:f,total:tot,paidBy:by,datetime:new Date().toISOString()};});
-      onUpd(t=>({...t,items:[...t.items,...ni]}));return p.items.length;
-    }return 0;
-  };
-
-  const doScan=async e=>{
-    const file=e.target.files[0];if(!file)return;
-    if(!apiKey){onNeedKey();e.target.value="";return;}
-    setMsg("");setScan(true);
-    try{
-      setMsg("⏳ 壓縮圖片…");
-      const b64=await compress(file);
-      setMsg("⏳ AI 辨識收據…");
-      const reply=await callAPI([
-        {role:"user",content:[
-          {type:"image",source:{type:"base64",media_type:"image/jpeg",data:b64}},
-          {type:"text",text:"收據照片，辨識所有品項名稱（翻譯成繁體中文）、金額與貨幣(JPY/CNY/KRW/USD/HKD/EUR)。只回覆JSON：{\"currency\":\"KRW\",\"items\":[{\"name\":\"品名\",\"amount\":1234}]}"}
-        ]}
-      ]);
-      const m=reply.match(/\{[\s\S]*\}/);if(!m)throw new Error("格式解析失敗");
-      const p=JSON.parse(m[0]);
-      const dc=p.currency?.toUpperCase();
-      const uc=CUR.find(c=>c.code===dc)?dc:cur;
-      const ur=trip.cRates?.[uc]??rates[uc]??er;
-      if(p.items?.length>0){
-        if(CUR.find(c=>c.code===dc))setCur(dc);
-        const ni=p.items.map(item=>{const base=ur?item.amount*ur:0;const{fee:f,total:tot}=calc(base,pay);return{id:uid(),name:item.name||"未知品項",amount:item.amount,currency:uc,twd:Math.round(base),payMethod:pay,fee:f,total:tot,paidBy:by,datetime:new Date().toISOString()};});
-        onUpd(t=>({...t,items:[...t.items,...ni]}));
-        setMsg("✓ 辨識到 "+ni.length+" 筆品項");
-      }else setMsg("未辨識到品項");
-    }catch(err){setMsg("✗ "+err.message);}
-    finally{setScan(false);e.target.value="";}
-  };
-
-  const doTxt=async()=>{
-    if(!txt.trim())return;setTxL(true);
-    try{const n=await parseItems(txt);if(n>0){setTxt("");setShowTxt(false);setMsg("✓ 辨識到 "+n+" 筆品項");}else setMsg("未辨識到品項");}
-    catch(err){setMsg("✗ "+err.message);}finally{setTxL(false);}
-  };
-
-  const cashT=trip.items.filter(i=>i.payMethod==="cash").reduce((s,i)=>s+i.total,0);
-  const cardB=trip.items.filter(i=>i.payMethod==="card").reduce((s,i)=>s+i.twd,0);
-  const cardF=trip.items.filter(i=>i.payMethod==="card").reduce((s,i)=>s+i.fee,0);
+  const items=trip.items||[];
+  const cashT=items.filter(i=>i.payMethod==="cash").reduce((s,i)=>s+i.total,0);
+  const cardB=items.filter(i=>i.payMethod==="card").reduce((s,i)=>s+i.twd,0);
+  const cardF=items.filter(i=>i.payMethod==="card").reduce((s,i)=>s+i.fee,0);
   const cardT=cardB+cardF;const grand=cashT+cardT;
-  const hasCash=trip.items.some(i=>i.payMethod==="cash");
-  const hasCard=trip.items.some(i=>i.payMethod==="card");
-  const byC=trip.items.reduce((a,i)=>{a[i.currency]=(a[i.currency]||0)+i.amount;return a;},{});
-  const byM=trip.members.reduce((a,m)=>{a[m]=trip.items.filter(i=>i.paidBy===m).reduce((s,i)=>s+i.total,0);return a;},{});
+  const hasCash=items.some(i=>i.payMethod==="cash");
+  const hasCard=items.some(i=>i.payMethod==="card");
+  const byMember=(trip.members||[]).reduce((a,m)=>{a[m]=items.filter(i=>i.paidBy===m).reduce((s,i)=>s+i.total,0);return a;},{});
 
+  // Group items by category (maintain category order)
+  const grouped={};
+  cats.forEach(c=>{grouped[c]=[];});
+  items.forEach(i=>{const c=i.category||"其他";if(!grouped[c])grouped[c]=[];grouped[c].push(i);});
+  const usedCats=cats.filter(c=>grouped[c]?.length>0);
+  const catTotal=c=>(grouped[c]||[]).reduce((s,i)=>s+i.total,0);
+
+  const syncColor=syncStatus==="saving"?"#f59e0b":syncStatus==="saved"?"#34d399":"#ef4444";
   const btn=(label,onClick,style)=>h("button",{onClick,style:{border:"none",cursor:"pointer",...style}},label);
-  const S={hd:{background:"#1e293b",padding:"20px 16px 0",position:"sticky",top:0,zIndex:10}};
 
   return h("div",{style:{background:"#f0f4f8",minHeight:"100vh"}},
     /* Header */
-    h("div",{style:S.hd},
-      h("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:6}},
+    h("div",{style:{background:"#1e293b",padding:"20px 16px 0",position:"sticky",top:0,zIndex:10}},
+      h("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}},
         btn("‹ 返回",onBack,{background:"none",color:"#38bdf8",fontSize:15,padding:0,fontWeight:600}),
-        trip.items.length>0&&h("div",{style:{textAlign:"right"}},
-          h("div",{style:{color:"#64748b",fontSize:11}},trip.items.length+" 筆 · 合計"),
-          h("div",{style:{color:"#34d399",fontSize:20,fontWeight:800,letterSpacing:-.5}},"NT$"+grand.toLocaleString())
+        h("div",{style:{display:"flex",alignItems:"center",gap:10}},
+          syncStatus&&h("div",{style:{width:8,height:8,borderRadius:"50%",background:syncColor}}),
+          items.length>0&&h("div",{style:{textAlign:"right"}},
+            h("div",{style:{color:"#64748b",fontSize:11}},items.length+" 筆 · 合計"),
+            h("div",{style:{color:"#34d399",fontSize:20,fontWeight:800}},"NT$"+grand.toLocaleString())
+          )
         )
       ),
-      h("div",{style:{color:"#f1f5f9",fontSize:18,fontWeight:700,marginBottom:12}},trip.emoji+" "+trip.name),
+      h("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}},
+        h("div",{style:{color:"#f1f5f9",fontSize:18,fontWeight:700}},trip.emoji+" "+trip.name),
+        btn(showCode?"收起":"🔗 邀請碼",()=>setShowCode(p=>!p),{background:"rgba(255,255,255,.1)",color:"#94a3b8",borderRadius:8,padding:"5px 10px",fontSize:12,fontWeight:600})
+      ),
+      showCode&&h("div",{style:{marginBottom:12,background:"rgba(255,255,255,.06)",borderRadius:12,padding:"12px 16px"}},
+        h("div",{style:{fontSize:11,color:"#94a3b8",marginBottom:6}},"傳給家人，輸入邀請碼即可加入："),
+        h("div",{style:{display:"flex",alignItems:"center",gap:10}},
+          h("div",{style:{fontSize:28,fontWeight:900,letterSpacing:6,color:"#38bdf8",flex:1}},code),
+          btn(copied?"✓ 已複製":"複製",()=>{navigator.clipboard?.writeText(code).then(()=>{setCopied(true);setTimeout(()=>setCopied(false),2000);});},{background:"#38bdf8",color:"#0f172a",borderRadius:8,padding:"7px 14px",fontSize:13,fontWeight:700})
+        )
+      ),
       h("div",{style:{display:"flex",gap:8,overflowX:"auto",paddingBottom:14}},
-        CUR.map(c=>btn(c.flag+" "+c.name,()=>setCur(c.code),{
-          flexShrink:0,padding:"6px 14px",borderRadius:999,
-          background:cur===c.code?"#38bdf8":"rgba(255,255,255,.08)",
-          color:cur===c.code?"#0f172a":"#94a3b8",fontWeight:cur===c.code?700:500,fontSize:13
-        }))
+        CUR.map(c=>btn(c.flag+" "+c.name,()=>setCur(c.code),{flexShrink:0,padding:"6px 14px",borderRadius:999,background:cur===c.code?"#38bdf8":"rgba(255,255,255,.08)",color:cur===c.code?"#0f172a":"#94a3b8",fontWeight:cur===c.code?700:500,fontSize:13}))
       )
     ),
     /* Rate strip */
     h("div",{style:{background:"#0f172a",padding:"8px 14px"}},
       editR
         ?h("div",{style:{display:"flex",alignItems:"center",gap:6,justifyContent:"center",flexWrap:"wrap"}},
-            !inv
-              ?h("span",{style:{color:"#38bdf8",fontSize:13,fontWeight:600}},"1 "+cinfo?.sym+" ("+cur+") ＝ NT$")
-              :h("span",{style:{color:"#38bdf8",fontSize:13,fontWeight:600}},"NT$1 ＝"),
+            !inv?h("span",{style:{color:"#38bdf8",fontSize:13,fontWeight:600}},"1 "+cinfo?.sym+" ("+cur+") ＝ NT$"):h("span",{style:{color:"#38bdf8",fontSize:13,fontWeight:600}},"NT$1 ＝"),
             h("input",{ref:rRef,type:"number",inputMode:"decimal",value:rIn,onChange:e=>setRIn(e.target.value),onKeyDown:e=>e.key==="Enter"&&confR(),placeholder:lr?fmtR(inv?1/lr:lr):"",
               style:{width:80,background:"#1e293b",border:"1.5px solid #38bdf8",borderRadius:8,padding:"4px 8px",color:"#f1f5f9",fontSize:15,fontWeight:700,outline:"none",textAlign:"center"}}),
             inv&&h("span",{style:{color:"#38bdf8",fontSize:13,fontWeight:600}},cinfo?.sym+" ("+cur+")"),
@@ -383,32 +459,63 @@ function Trip({trip,rates,rateDate,apiKey,onBack,onUpd,onNeedKey}){
             btn("×",()=>setEditR(false),{background:"transparent",color:"#64748b",fontSize:18,lineHeight:1,padding:"0 2px"})
           )
         :h("div",{style:{display:"flex",alignItems:"center",justifyContent:"center",gap:6,flexWrap:"wrap"}},
-            !inv
-              ?h("span",{style:{color:"#38bdf8",fontSize:13,fontWeight:600}},"1 "+cinfo?.sym+" ("+cur+")\u3000＝\u3000",h("span",{style:{color:"#f1f5f9"}},"NT$ "+fmtR(dr)))
-              :h("span",{style:{color:"#38bdf8",fontSize:13,fontWeight:600}},"NT$1\u3000＝\u3000",h("span",{style:{color:"#f1f5f9"}},fmtR(dr)+" "+cinfo?.sym+" ("+cur+")")),
+            !inv?h("span",{style:{color:"#38bdf8",fontSize:13,fontWeight:600}},"1 "+cinfo?.sym+" ("+cur+")\u3000＝\u3000",h("span",{style:{color:"#f1f5f9"}},"NT$ "+fmtR(dr))):h("span",{style:{color:"#38bdf8",fontSize:13,fontWeight:600}},"NT$1\u3000＝\u3000",h("span",{style:{color:"#f1f5f9"}},fmtR(dr)+" "+cinfo?.sym+" ("+cur+")")),
             btn("⇄",togDir,{background:"rgba(255,255,255,.08)",borderRadius:6,padding:"2px 7px",color:"#64748b",fontSize:13}),
             isCust&&h("span",{style:{fontSize:10,fontWeight:700,padding:"2px 6px",borderRadius:4,background:"#f59e0b",color:"#0f172a"}},"自填"),
             isCust&&dl!=null&&h("span",{style:{color:"#475569",fontSize:11}},"(即時 "+fmtR(dl)+")"),
             btn("✏️ 修改",openR,{background:"rgba(255,255,255,.08)",borderRadius:6,padding:"3px 8px",color:"#94a3b8",fontSize:12}),
-            isCust&&btn("還原即時",clrCR,{background:"transparent",color:"#64748b",fontSize:11,textDecoration:"underline"})
+            isCust&&btn("還原",clrCR,{background:"transparent",color:"#64748b",fontSize:11,textDecoration:"underline"})
           )
     ),
     /* Input card */
     h("div",{style:{padding:"16px 16px 0"}},
       h("div",{style:{background:"#fff",borderRadius:20,padding:16,boxShadow:"0 1px 4px rgba(0,0,0,.06)"}},
-        h("input",{type:"text",placeholder:"品項名稱（可不填）",value:iName,onChange:e=>setIName(e.target.value),
-          style:{width:"100%",border:"none",borderBottom:"1.5px solid #e2e8f0",padding:"8px 0",fontSize:15,color:"#334155",outline:"none",marginBottom:12,background:"transparent"}}),
-        trip.members.length>0&&h("div",{style:{marginBottom:12}},
-          h("div",{style:{fontSize:11,color:"#94a3b8",fontWeight:600,marginBottom:6}},"誰付款"),
-          h("div",{style:{display:"flex",gap:6,flexWrap:"wrap"}},
-            trip.members.map((m,i)=>btn(m,()=>setBy(m),{
-              padding:"5px 14px",borderRadius:999,border:"2px solid",
-              borderColor:by===m?COLORS[i%COLORS.length]:"#e2e8f0",
-              background:by===m?COLORS[i%COLORS.length]:"#fff",
-              color:by===m?"#fff":"#64748b",fontWeight:by===m?700:500,fontSize:13
-            }))
+
+        /* Category picker */
+        h("div",{style:{marginBottom:14}},
+          h("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}},
+            h("div",{style:{fontSize:11,color:"#94a3b8",fontWeight:600}},"類別"),
+            btn(manageCats?"完成":"管理類別",()=>setManageCats(p=>!p),{background:"none",color:"#94a3b8",fontSize:11,padding:0,textDecoration:"underline"})
+          ),
+          h("div",{style:{display:"flex",gap:6,overflowX:"auto",paddingBottom:4}},
+            cats.map(c=>{
+              const col=catColor(cats,c);
+              return h("div",{key:c,style:{display:"flex",alignItems:"center",gap:4,flexShrink:0}},
+                btn(c,()=>{if(!manageCats)setCat(c);},{
+                  padding:"6px 14px",borderRadius:999,border:"2px solid",
+                  borderColor:cat===c?col:"#e2e8f0",
+                  background:cat===c?col:"#fff",
+                  color:cat===c?"#fff":"#64748b",
+                  fontWeight:cat===c?700:500,fontSize:13,flexShrink:0
+                }),
+                manageCats&&btn("×",()=>removeCat(c),{background:"#ef4444",color:"#fff",borderRadius:"50%",width:18,height:18,fontSize:11,lineHeight:"18px",padding:0,display:"flex",alignItems:"center",justifyContent:"center",marginLeft:-8,flexShrink:0})
+              );
+            }),
+            !manageCats&&(showAddCat
+              ?h("div",{style:{display:"flex",gap:6,alignItems:"center",flexShrink:0}},
+                  h("input",{autoFocus:true,value:newCat,onChange:e=>setNewCat(e.target.value),onKeyDown:e=>e.key==="Enter"&&addCat(),
+                    placeholder:"類別名稱",style:{border:"1.5px solid #38bdf8",borderRadius:10,padding:"5px 10px",fontSize:13,outline:"none",width:90,color:"#1e293b"}}),
+                  btn("加",addCat,{background:"#1e293b",color:"#fff",borderRadius:8,padding:"5px 10px",fontSize:13,fontWeight:700}),
+                  btn("×",()=>{setShowAddCat(false);setNewCat("");},{background:"none",color:"#94a3b8",fontSize:16,padding:0})
+                )
+              :btn("＋",()=>setShowAddCat(true),{padding:"6px 12px",borderRadius:999,border:"2px dashed #e2e8f0",background:"transparent",color:"#94a3b8",fontSize:14,flexShrink:0})
+            )
           )
         ),
+
+        /* Item name */
+        h("input",{type:"text",placeholder:"細項說明（可不填）",value:iName,onChange:e=>setIName(e.target.value),
+          style:{width:"100%",border:"none",borderBottom:"1.5px solid #e2e8f0",padding:"8px 0",fontSize:15,color:"#334155",outline:"none",marginBottom:12,background:"transparent"}}),
+
+        /* Payer */
+        (trip.members||[]).length>0&&h("div",{style:{marginBottom:12}},
+          h("div",{style:{fontSize:11,color:"#94a3b8",fontWeight:600,marginBottom:6}},"誰付款"),
+          h("div",{style:{display:"flex",gap:6,flexWrap:"wrap"}},
+            (trip.members||[]).map((m,i)=>btn(m,()=>setBy(m),{padding:"5px 14px",borderRadius:999,border:"2px solid",borderColor:by===m?COLORS[i%COLORS.length]:"#e2e8f0",background:by===m?COLORS[i%COLORS.length]:"#fff",color:by===m?"#fff":"#64748b",fontWeight:by===m?700:500,fontSize:13}))
+          )
+        ),
+
+        /* Payment method */
         h("div",{style:{display:"flex",alignItems:"center",gap:8,marginBottom:12}},
           h("div",{style:{display:"flex",background:"#f1f5f9",borderRadius:10,padding:3,gap:2}},
             btn("💵 現金",()=>setPay("cash"),{padding:"6px 14px",borderRadius:8,background:pay==="cash"?"#fff":"transparent",color:pay==="cash"?"#1e293b":"#94a3b8",fontWeight:pay==="cash"?700:500,fontSize:13,boxShadow:pay==="cash"?"0 1px 3px rgba(0,0,0,.12)":"none"}),
@@ -416,136 +523,152 @@ function Trip({trip,rates,rateDate,apiKey,onBack,onUpd,onNeedKey}){
           ),
           pay==="card"&&h("div",{style:{display:"flex",alignItems:"center",gap:4,marginLeft:"auto"}},
             h("span",{style:{color:"#94a3b8",fontSize:12}},"手續費"),
-            h("input",{type:"number",inputMode:"decimal",value:fee,onChange:e=>setFee(e.target.value),
-              style:{width:48,border:"1.5px solid #e2e8f0",borderRadius:8,padding:"4px 6px",fontSize:13,fontWeight:700,color:"#6366f1",outline:"none",textAlign:"center",background:"#f8f7ff"}}),
+            h("input",{type:"number",inputMode:"decimal",value:fee,onChange:e=>setFee(e.target.value),style:{width:48,border:"1.5px solid #e2e8f0",borderRadius:8,padding:"4px 6px",fontSize:13,fontWeight:700,color:"#6366f1",outline:"none",textAlign:"center",background:"#f8f7ff"}}),
             h("span",{style:{color:"#94a3b8",fontSize:12}},"%")
           )
         ),
+
+        /* Amount */
         h("div",{style:{display:"flex",gap:10,alignItems:"center"}},
           h("div",{style:{flex:1,position:"relative"}},
             h("span",{style:{position:"absolute",left:14,top:"50%",transform:"translateY(-50%)",color:"#94a3b8",fontSize:18,fontWeight:600,pointerEvents:"none"}},cinfo?.sym),
             h("input",{ref:aRef,type:"number",inputMode:"decimal",placeholder:"0",value:amt,onChange:e=>setAmt(e.target.value),onKeyDown:e=>e.key==="Enter"&&add(),
               style:{width:"100%",border:"1.5px solid #e2e8f0",borderRadius:14,padding:"14px 14px 14px 36px",fontSize:22,fontWeight:700,color:"#1e293b",outline:"none",background:"#f8fafc"}})
           ),
-          btn("加入",add,{background:pAmt&&er?(pay==="card"?"#6366f1":"#1e293b"):"#e2e8f0",color:pAmt&&er?"#fff":"#94a3b8",borderRadius:14,padding:"14px 20px",fontSize:15,fontWeight:700,whiteSpace:"nowrap",opacity:pAmt&&er?1:.6})
+          btn("加入",add,{background:pAmt&&er?(pay==="card"?"#6366f1":"#1e293b"):"#e2e8f0",color:pAmt&&er?"#fff":"#94a3b8",borderRadius:14,padding:"14px 20px",fontSize:15,fontWeight:700,whiteSpace:"nowrap"})
         ),
-        h("div",{style:{minHeight:52,display:"flex",alignItems:"center",justifyContent:"center",marginTop:10}},
+
+        /* Preview */
+        h("div",{style:{minHeight:48,display:"flex",alignItems:"center",justifyContent:"center",marginTop:10}},
           pTot!==null
             ?h("div",{style:{textAlign:"center"}},
                 pay==="card"&&pFeeV>0
-                  ?h("div",null,
-                      h("div",{style:{color:"#94a3b8",fontSize:12,marginBottom:2}},"NT$"+(pBase||0).toLocaleString(),h("span",{style:{color:"#a5b4fc",margin:"0 4px"}},"+"),h("span",{style:{color:"#a5b4fc"}},"手續費 NT$"+pFeeV.toLocaleString())),
-                      h("div",null,h("span",{style:{color:"#64748b",fontSize:13}},"約\u3000"),h("span",{style:{color:"#6366f1",fontSize:32,fontWeight:800,letterSpacing:-1}},"NT$"+pTot.toLocaleString()))
-                    )
-                  :h("div",null,h("span",{style:{color:"#64748b",fontSize:13}},"約\u3000"),h("span",{style:{color:"#0ea5e9",fontSize:32,fontWeight:800,letterSpacing:-1}},"NT$"+pTot.toLocaleString()))
+                  ?h("div",null,h("div",{style:{color:"#94a3b8",fontSize:12,marginBottom:2}},"NT$"+(pBase||0).toLocaleString()+" + ",h("span",{style:{color:"#a5b4fc"}},"手續費 NT$"+pFeeV.toLocaleString())),h("div",null,h("span",{style:{color:"#64748b",fontSize:13}},"約　"),h("span",{style:{color:"#6366f1",fontSize:30,fontWeight:800,letterSpacing:-1}},"NT$"+pTot.toLocaleString())))
+                  :h("div",null,h("span",{style:{color:"#64748b",fontSize:13}},"約　"),h("span",{style:{color:"#0ea5e9",fontSize:30,fontWeight:800,letterSpacing:-1}},"NT$"+pTot.toLocaleString()))
               )
             :h("span",{style:{color:"#cbd5e1",fontSize:13}},"輸入金額即時預覽台幣")
-        ),
-        btn(scan?h("span",null,h("span",{style:{animation:"spin 1s linear infinite",display:"inline-block"}},"⏳")," "+(msg||"辨識中…")):"📷 拍照 / 相簿選取收據（AI 辨識）",
-          ()=>fRef.current?.click(),
-          {width:"100%",border:"2px dashed #e2e8f0",borderRadius:14,padding:"13px 0",background:scan?"#f8fafc":"#fafafa",color:"#64748b",fontSize:14,fontWeight:500,display:"flex",alignItems:"center",justifyContent:"center",gap:8,marginTop:4}
-        ),
-        h("input",{ref:fRef,type:"file",accept:"image/jpeg,image/png,image/webp,image/gif",style:{display:"none"},onChange:doScan}),
-        btn(showTxt?"▲ 收起":"⌨️ 或貼上收據文字",()=>setShowTxt(p=>!p),{width:"100%",background:"none",color:"#94a3b8",fontSize:12,padding:"5px 0"}),
-        showTxt&&h("div",{style:{marginTop:4}},
-          h("textarea",{value:txt,onChange:e=>setTxt(e.target.value),placeholder:"貼上或手打收據文字…",
-            style:{width:"100%",border:"1.5px solid #e2e8f0",borderRadius:12,padding:"10px 12px",fontSize:13,outline:"none",resize:"none",height:100,color:"#334155",lineHeight:1.6}}),
-          btn(txLoading?"⏳ AI 辨識中…":"AI 辨識",doTxt,
-            {width:"100%",marginTop:8,padding:"12px 0",borderRadius:12,background:txt.trim()?"#1e293b":"#e2e8f0",color:txt.trim()?"#fff":"#94a3b8",fontWeight:700,fontSize:14})
-        ),
-        !scan&&msg&&h("div",{style:{textAlign:"center",fontSize:12,marginTop:8,color:msg.startsWith("✓")?"#10b981":"#ef4444"}},msg)
+        )
       )
     ),
-    /* Items */
-    trip.items.length>0&&h("div",{style:{padding:"16px 16px 160px"}},
-      h("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}},
-        h("span",{style:{fontSize:12,color:"#94a3b8",fontWeight:600,letterSpacing:.5,textTransform:"uppercase"}},"已記錄 "+trip.items.length+" 筆"),
+
+    /* Items grouped by category */
+    items.length>0&&h("div",{style:{padding:"16px 16px 160px"}},
+      h("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}},
+        h("span",{style:{fontSize:12,color:"#94a3b8",fontWeight:600,letterSpacing:.5,textTransform:"uppercase"}},"已記錄 "+items.length+" 筆"),
         clr
           ?h("div",{style:{display:"flex",gap:8,alignItems:"center"}},
               h("span",{style:{fontSize:12,color:"#64748b"}},"確定清除？"),
               btn("取消",()=>setClr(false),{fontSize:11,color:"#64748b",background:"none",border:"1px solid #e2e8f0",borderRadius:6,padding:"2px 10px"}),
-              btn("清除",()=>{onUpd(t=>({...t,items:[]}));setMsg("");setClr(false);},{fontSize:11,color:"#fff",background:"#ef4444",borderRadius:6,padding:"2px 10px",fontWeight:600})
+              btn("清除",()=>{onUpdate(t=>({...t,items:[]}));setClr(false);},{fontSize:11,color:"#fff",background:"#ef4444",borderRadius:6,padding:"2px 10px",fontWeight:600})
             )
           :btn("全部清除",()=>setClr(true),{fontSize:12,color:"#ef4444",background:"none"})
       ),
-      h("div",{style:{display:"flex",flexDirection:"column",gap:8}},
-        trip.items.map(item=>{
-          const c=ci(item.currency);const isC=item.payMethod==="card";const mcol=item.paidBy?mc(trip,item.paidBy):"#94a3b8";
-          if(eId===item.id){
-            const ir=trip.cRates?.[item.currency]??rates[item.currency];
-            const ea2=parseFloat(eAmt);const ep=ir&&!isNaN(ea2)&&ea2>0?Math.round(ea2*ir):null;const ef=ep&&isC?Math.round(ep*pFee/100):0;
-            return h("div",{key:item.id,style:{background:"#fff",borderRadius:16,padding:"14px 16px",boxShadow:"0 2px 8px rgba(0,0,0,.08)",borderLeft:"3px solid #38bdf8"}},
-              h("div",{style:{fontSize:11,color:"#38bdf8",fontWeight:600,marginBottom:10}},"✏️ 編輯品項"),
-              h("input",{value:eName,onChange:e=>setEN(e.target.value),placeholder:"品項名稱",
-                style:{width:"100%",border:"1.5px solid #e2e8f0",borderRadius:10,padding:"8px 12px",fontSize:15,outline:"none",marginBottom:10,color:"#1e293b"}}),
-              h("div",{style:{display:"flex",alignItems:"center",gap:8,marginBottom:8}},
-                h("span",{style:{color:"#94a3b8",fontSize:16,fontWeight:600,flexShrink:0}},c?.sym),
-                h("input",{type:"number",inputMode:"decimal",value:eAmt,onChange:e=>setEA(e.target.value),onKeyDown:e=>e.key==="Enter"&&saveE(item),
-                  style:{flex:1,border:"1.5px solid #e2e8f0",borderRadius:10,padding:"8px 12px",fontSize:18,fontWeight:700,outline:"none",color:"#1e293b"}})
-              ),
-              ep!==null&&h("div",{style:{fontSize:12,color:"#64748b",marginBottom:10}},"≈ NT$"+(ep+ef).toLocaleString(),ef>0&&h("span",{style:{color:"#a5b4fc"}}," (含手續費 NT$"+ef.toLocaleString()+")")),
-              h("div",{style:{display:"flex",gap:8}},
-                btn("取消",cancelE,{flex:1,padding:"9px 0",border:"1.5px solid #e2e8f0",borderRadius:10,background:"#fff",color:"#64748b",fontWeight:600,fontSize:13}),
-                btn("儲存",()=>saveE(item),{flex:2,padding:"9px 0",borderRadius:10,background:"#1e293b",color:"#fff",fontWeight:700,fontSize:13})
-              )
-            );
-          }
-          return h("div",{key:item.id,style:{background:"#fff",borderRadius:16,padding:"12px 16px",display:"flex",alignItems:"center",boxShadow:"0 1px 3px rgba(0,0,0,.05)",borderLeft:"3px solid "+(isC?"#6366f1":"#10b981")}},
-            h("div",{style:{flex:1,minWidth:0}},
-              h("div",{style:{display:"flex",alignItems:"center",gap:5,flexWrap:"wrap"}},
-                h("div",{style:{fontWeight:600,color:"#1e293b",fontSize:15,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}},item.name),
-                h("span",{style:{fontSize:10,fontWeight:700,padding:"1px 6px",borderRadius:4,background:isC?"#ede9fe":"#dcfce7",color:isC?"#6366f1":"#16a34a",flexShrink:0}},isC?"💳 刷卡":"💵 現金"),
-                item.paidBy&&h("span",{style:{fontSize:10,fontWeight:700,padding:"1px 6px",borderRadius:4,background:mcol+"22",color:mcol,flexShrink:0}},item.paidBy)
-              ),
-              h("div",{style:{color:"#94a3b8",fontSize:12,marginTop:2}},c?.flag+" "+c?.sym+(item.amount||0).toLocaleString(),isC&&item.fee>0&&h("span",{style:{color:"#a5b4fc",marginLeft:6}},"+手續費 NT$"+item.fee.toLocaleString())),
-              (item.datetime||item.date)&&h("div",{style:{color:"#cbd5e1",fontSize:11,marginTop:2}},"🕐 "+fmtT(item.datetime||item.date))
-            ),
-            h("div",{style:{textAlign:"right",marginLeft:12,flexShrink:0}},
-              h("div",{style:{fontWeight:800,color:isC?"#6366f1":"#1e293b",fontSize:16}},"NT$"+(item.total||0).toLocaleString()),
-              btn("✏️ 編輯",()=>startE(item),{fontSize:11,color:"#94a3b8",background:"none",padding:0,marginTop:2})
-            ),
-            btn("×",()=>del(item.id),{marginLeft:8,color:"#cbd5e1",background:"none",fontSize:22,lineHeight:1,padding:"0 4px"})
-          );
-        })
-      ),
-      /* Summary */
-      h("div",{style:{background:"#fff",borderRadius:16,padding:16,marginTop:12,boxShadow:"0 1px 3px rgba(0,0,0,.05)"}},
-        trip.members.length>0&&h("div",null,
-          h("div",{style:{fontSize:11,color:"#94a3b8",fontWeight:600,letterSpacing:.5,textTransform:"uppercase",marginBottom:8}},"各人支出"),
-          trip.members.map((m,i)=>h("div",{key:m,style:{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"5px 0",borderBottom:"1px solid #f1f5f9"}},
+
+      usedCats.map(catName=>{
+        const col=catColor(cats,catName);
+        const catItems=grouped[catName]||[];
+        const cTot=catTotal(catName);
+        return h("div",{key:catName,style:{marginBottom:16}},
+          /* Category header */
+          h("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}},
             h("div",{style:{display:"flex",alignItems:"center",gap:8}},
-              h("div",{style:{width:8,height:8,borderRadius:"50%",background:COLORS[i%COLORS.length]}}),
-              h("span",{style:{fontSize:14,color:"#334155"}},m)
+              h("div",{style:{width:10,height:10,borderRadius:"50%",background:col}}),
+              h("div",{style:{fontSize:14,fontWeight:700,color:"#1e293b"}}),
+              h("span",{style:{fontSize:14,fontWeight:700,color:"#334155"}},catName)
             ),
-            h("span",{style:{fontWeight:700,color:COLORS[i%COLORS.length],fontSize:14}},"NT$"+Math.round(byM[m]||0).toLocaleString())
-          )),
-          h("div",{style:{height:1,background:"#e2e8f0",margin:"10px 0"}})
-        ),
-        h("div",{style:{fontSize:11,color:"#94a3b8",fontWeight:600,letterSpacing:.5,textTransform:"uppercase",marginBottom:8}},"付款方式"),
-        hasCash&&h("div",{style:{display:"flex",justifyContent:"space-between",padding:"5px 0",fontSize:14}},h("span",{style:{color:"#16a34a",fontWeight:600}},"💵 現金"),h("span",{style:{fontWeight:700,color:"#1e293b"}},"NT$"+cashT.toLocaleString())),
-        hasCard&&h("div",null,
-          h("div",{style:{display:"flex",justifyContent:"space-between",padding:"4px 0",fontSize:13,color:"#64748b"}},h("span","💳 刷卡金額"),h("span","NT$"+cardB.toLocaleString())),
-          h("div",{style:{display:"flex",justifyContent:"space-between",padding:"4px 0",fontSize:13,color:"#a5b4fc"}},h("span","國際手續費"),h("span","+NT$"+cardF.toLocaleString())),
-          h("div",{style:{display:"flex",justifyContent:"space-between",padding:"5px 0",fontSize:14,borderTop:"1px solid #f1f5f9",marginTop:2}},h("span",{style:{color:"#6366f1",fontWeight:600}},"💳 刷卡合計"),h("span",{style:{fontWeight:700,color:"#6366f1"}},"NT$"+cardT.toLocaleString()))
-        ),
-        Object.keys(byC).length>1&&h("div",null,
+            h("div",{style:{fontSize:14,fontWeight:700,color:col}},"NT$"+cTot.toLocaleString())
+          ),
+          /* Items in category */
+          h("div",{style:{display:"flex",flexDirection:"column",gap:8}},
+            catItems.map(item=>{
+              const c=ciOf(item.currency);const isC=item.payMethod==="card";const mcol2=item.paidBy?mc(trip,item.paidBy):"#94a3b8";
+              if(eId===item.id){
+                const ir=(trip.cRates||{})[item.currency]??rates[item.currency];
+                const ea2=parseFloat(eAmt);const ep=ir&&!isNaN(ea2)&&ea2>0?Math.round(ea2*ir):null;const ef=ep&&isC?Math.round(ep*pFee/100):0;
+                return h("div",{key:item.id,style:{background:"#fff",borderRadius:16,padding:"14px 16px",boxShadow:"0 2px 8px rgba(0,0,0,.08)",borderLeft:"3px solid "+col}},
+                  h("div",{style:{fontSize:11,color:col,fontWeight:600,marginBottom:10}},"✏️ 編輯品項"),
+                  /* Category in edit */
+                  h("div",{style:{display:"flex",gap:6,overflowX:"auto",paddingBottom:6,marginBottom:10}},
+                    cats.map(c2=>btn(c2,()=>setEC(c2),{padding:"4px 12px",borderRadius:999,border:"2px solid",borderColor:eCat===c2?catColor(cats,c2):"#e2e8f0",background:eCat===c2?catColor(cats,c2):"#fff",color:eCat===c2?"#fff":"#64748b",fontWeight:eCat===c2?700:500,fontSize:12,flexShrink:0}))
+                  ),
+                  h("input",{value:eName,onChange:e=>setEN(e.target.value),placeholder:"細項說明",style:{width:"100%",border:"1.5px solid #e2e8f0",borderRadius:10,padding:"8px 12px",fontSize:15,outline:"none",marginBottom:10,color:"#1e293b"}}),
+                  h("div",{style:{display:"flex",alignItems:"center",gap:8,marginBottom:8}},
+                    h("span",{style:{color:"#94a3b8",fontSize:16,fontWeight:600,flexShrink:0}},c?.sym),
+                    h("input",{type:"number",inputMode:"decimal",value:eAmt,onChange:e=>setEA(e.target.value),onKeyDown:e=>e.key==="Enter"&&saveE(item),style:{flex:1,border:"1.5px solid #e2e8f0",borderRadius:10,padding:"8px 12px",fontSize:18,fontWeight:700,outline:"none",color:"#1e293b"}})
+                  ),
+                  ep!==null&&h("div",{style:{fontSize:12,color:"#64748b",marginBottom:10}},"≈ NT$"+(ep+ef).toLocaleString()),
+                  h("div",{style:{display:"flex",gap:8}},
+                    btn("取消",cancelE,{flex:1,padding:"9px 0",border:"1.5px solid #e2e8f0",borderRadius:10,background:"#fff",color:"#64748b",fontWeight:600,fontSize:13}),
+                    btn("儲存",()=>saveE(item),{flex:2,padding:"9px 0",borderRadius:10,background:"#1e293b",color:"#fff",fontWeight:700,fontSize:13})
+                  )
+                );
+              }
+              return h("div",{key:item.id,style:{background:"#fff",borderRadius:14,padding:"11px 14px",display:"flex",alignItems:"center",boxShadow:"0 1px 3px rgba(0,0,0,.04)",borderLeft:"3px solid "+col}},
+                h("div",{style:{flex:1,minWidth:0}},
+                  h("div",{style:{display:"flex",alignItems:"center",gap:5,flexWrap:"wrap"}},
+                    item.name&&h("div",{style:{fontWeight:600,color:"#1e293b",fontSize:14,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}},item.name),
+                    !item.name&&h("div",{style:{color:"#94a3b8",fontSize:14}},catName),
+                    h("span",{style:{fontSize:10,fontWeight:700,padding:"1px 6px",borderRadius:4,background:isC?"#ede9fe":"#dcfce7",color:isC?"#6366f1":"#16a34a",flexShrink:0}},isC?"💳":"💵"),
+                    item.paidBy&&h("span",{style:{fontSize:10,fontWeight:700,padding:"1px 6px",borderRadius:4,background:mcol2+"22",color:mcol2,flexShrink:0}},item.paidBy)
+                  ),
+                  h("div",{style:{color:"#94a3b8",fontSize:12,marginTop:2}},c?.flag+" "+c?.sym+(item.amount||0).toLocaleString(),isC&&item.fee>0&&h("span",{style:{color:"#a5b4fc",marginLeft:6}},"+手續費 NT$"+item.fee.toLocaleString())),
+                  (item.datetime||item.date)&&h("div",{style:{color:"#cbd5e1",fontSize:11,marginTop:2}},"🕐 "+fmtT(item.datetime||item.date))
+                ),
+                h("div",{style:{textAlign:"right",marginLeft:10,flexShrink:0}},
+                  h("div",{style:{fontWeight:800,color:isC?"#6366f1":"#1e293b",fontSize:15}},"NT$"+(item.total||0).toLocaleString()),
+                  btn("✏️",()=>startE(item),{fontSize:13,color:"#94a3b8",background:"none",padding:0,marginTop:2})
+                ),
+                btn("×",()=>del(item.id),{marginLeft:8,color:"#cbd5e1",background:"none",fontSize:22,lineHeight:1,padding:"0 4px"})
+              );
+            })
+          )
+        );
+      }),
+
+      /* Summary */
+      h("div",{style:{background:"#fff",borderRadius:16,padding:16,marginTop:8,boxShadow:"0 1px 3px rgba(0,0,0,.05)"}},
+        /* Category breakdown */
+        h("div",{style:{fontSize:11,color:"#94a3b8",fontWeight:600,letterSpacing:.5,textTransform:"uppercase",marginBottom:10}},"各類別支出"),
+        usedCats.map(catName=>{
+          const col=catColor(cats,catName);
+          return h("div",{key:catName,style:{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:"1px solid #f8fafc"}},
+            h("div",{style:{display:"flex",alignItems:"center",gap:8}},
+              h("div",{style:{width:8,height:8,borderRadius:"50%",background:col,flexShrink:0}}),
+              h("span",{style:{fontSize:14,color:"#334155"}},catName)
+            ),
+            h("span",{style:{fontWeight:700,color:col,fontSize:14}},"NT$"+catTotal(catName).toLocaleString())
+          );
+        }),
+        (trip.members||[]).length>0&&h("div",null,
           h("div",{style:{height:1,background:"#e2e8f0",margin:"10px 0"}}),
-          h("div",{style:{fontSize:11,color:"#94a3b8",fontWeight:600,letterSpacing:.5,textTransform:"uppercase",marginBottom:8}},"各幣別消費"),
-          Object.entries(byC).map(([code,a])=>{const c=ci(code);return h("div",{key:code,style:{display:"flex",justifyContent:"space-between",padding:"4px 0",fontSize:13,color:"#64748b"}},h("span",null,c?.flag+" "+c?.name),h("span",{style:{fontWeight:600}},c?.sym+a.toLocaleString()));})
-        )
-      )
-    ),
-    /* Bottom bar */
-    trip.items.length>0&&h("div",{style:{position:"fixed",bottom:0,left:0,right:0,background:"#1e293b",padding:"14px 24px 28px",boxShadow:"0 -4px 24px rgba(0,0,0,.2)"}},
-      hasCash&&hasCard&&h("div",{style:{display:"flex",justifyContent:"space-between",marginBottom:8,paddingBottom:8,borderBottom:"1px solid rgba(255,255,255,.08)"}},
-        h("div",{style:{display:"flex",gap:16}},
-          h("span",{style:{color:"#34d399",fontSize:12}},"💵 NT$"+cashT.toLocaleString()),
-          h("span",{style:{color:"#a5b4fc",fontSize:12}},"💳 NT$"+cardT.toLocaleString())
+          h("div",{style:{fontSize:11,color:"#94a3b8",fontWeight:600,letterSpacing:.5,textTransform:"uppercase",marginBottom:8}},"各人支出"),
+          (trip.members||[]).map((m,i)=>h("div",{key:m,style:{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"5px 0",borderBottom:"1px solid #f8fafc"}},
+            h("div",{style:{display:"flex",alignItems:"center",gap:8}},h("div",{style:{width:8,height:8,borderRadius:"50%",background:COLORS[i%COLORS.length]}}),h("span",{style:{fontSize:14,color:"#334155"}},m)),
+            h("span",{style:{fontWeight:700,color:COLORS[i%COLORS.length],fontSize:14}},"NT$"+Math.round(byMember[m]||0).toLocaleString())
+          ))
         ),
-        cardF>0&&h("span",{style:{color:"#64748b",fontSize:11}},"含手續費 NT$"+cardF.toLocaleString())
+        hasCard&&h("div",null,
+          h("div",{style:{height:1,background:"#e2e8f0",margin:"10px 0"}}),
+          h("div",{style:{fontSize:11,color:"#94a3b8",fontWeight:600,letterSpacing:.5,textTransform:"uppercase",marginBottom:8}},"付款方式"),
+          hasCash&&h("div",{style:{display:"flex",justifyContent:"space-between",padding:"4px 0",fontSize:13}},h("span",{style:{color:"#16a34a"}},"💵 現金"),h("span",{style:{fontWeight:600}},"NT$"+cashT.toLocaleString())),
+          h("div",{style:{display:"flex",justifyContent:"space-between",padding:"4px 0",fontSize:13,color:"#64748b"}},h("span","💳 刷卡金額"),h("span","NT$"+cardB.toLocaleString())),
+          cardF>0&&h("div",{style:{display:"flex",justifyContent:"space-between",padding:"4px 0",fontSize:12,color:"#a5b4fc"}},h("span","國際手續費"),h("span","+NT$"+cardF.toLocaleString())),
+          h("div",{style:{display:"flex",justifyContent:"space-between",padding:"5px 0",fontSize:14,borderTop:"1px solid #f1f5f9",marginTop:2}},h("span",{style:{color:"#6366f1",fontWeight:600}},"💳 刷卡合計"),h("span",{style:{fontWeight:700,color:"#6366f1"}},"NT$"+cardT.toLocaleString()))
+        )
+      ),
+
+      /* Pie charts — one per member */
+      (trip.members||[]).some(m=>(byMember[m]||0)>0)&&h("div",null,
+        h("div",{style:{fontSize:11,color:"#94a3b8",fontWeight:600,letterSpacing:.5,textTransform:"uppercase",margin:"16px 0 4px"}},"個人支出圓餅圖"),
+        (trip.members||[]).map((m,i)=>h(PieChart,{key:m,name:m,memberColor:COLORS[i%COLORS.length],items,cats}))
+      )
+    ),    /* Bottom bar */
+    items.length>0&&h("div",{style:{position:"fixed",bottom:0,left:0,right:0,background:"#1e293b",padding:"14px 24px 28px",boxShadow:"0 -4px 24px rgba(0,0,0,.2)"}},
+      hasCash&&hasCard&&h("div",{style:{display:"flex",justifyContent:"space-between",marginBottom:8,paddingBottom:8,borderBottom:"1px solid rgba(255,255,255,.08)"}},
+        h("div",{style:{display:"flex",gap:16}},h("span",{style:{color:"#34d399",fontSize:12}},"💵 NT$"+cashT.toLocaleString()),h("span",{style:{color:"#a5b4fc",fontSize:12}},"💳 NT$"+cardT.toLocaleString()))
       ),
       h("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center"}},
-        h("div",null,h("div",{style:{color:"#64748b",fontSize:12}},"台幣合計"),h("div",{style:{color:"#94a3b8",fontSize:11,marginTop:1}},trip.items.length+" 筆消費")),
+        h("div",null,h("div",{style:{color:"#64748b",fontSize:12}},"台幣合計"),h("div",{style:{color:"#94a3b8",fontSize:11,marginTop:1}},items.length+" 筆消費")),
         h("div",{style:{color:"#34d399",fontSize:34,fontWeight:900,letterSpacing:-1}},"NT$"+grand.toLocaleString())
       )
     )
