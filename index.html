@@ -50,6 +50,7 @@ const CUR=[
   {code:"HKD",name:"港幣",flag:"🇭🇰",sym:"HK$",key:"hkd"},
   {code:"USD",name:"美元",flag:"🇺🇸",sym:"$",key:"usd"},
   {code:"EUR",name:"歐元",flag:"🇪🇺",sym:"€",key:"eur"},
+  {code:"TWD",name:"台幣",flag:"🇹🇼",sym:"NT$",key:"twd"},
 ];
 const EMOJIS=["✈️","🇯🇵","🇰🇷","🇨🇳","🇭🇰","🇺🇸","🇫🇷","🇩🇪","🇮🇹","🇹🇭","🇸🇬","🏖️","🗺️","🎌","🌏","🏔️","🛳️","🎡","🏕️","🎢"];
 const COLORS=["#0ea5e9","#f59e0b","#10b981","#f43f5e","#8b5cf6","#06b6d4","#ec4899","#14b8a6"];
@@ -201,7 +202,10 @@ function App(){
     const today=new Date().toISOString().slice(0,10);
     fetch(`https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@${today}/v1/currencies/twd.json`)
       .then(r=>r.json()).then(d=>{
-        const r={};CUR.forEach(c=>{if(d.twd[c.key])r[c.code]=1/d.twd[c.key];});
+    const r={};CUR.forEach(c=>{
+      if(c.code==="TWD"){r["TWD"]=1;return;}
+      if(d.twd[c.key])r[c.code]=1/d.twd[c.key];
+    });
         setLiveRates(r);
       }).catch(()=>{
         fetch("https://open.er-api.com/v6/latest/TWD")
@@ -505,7 +509,10 @@ function HomeScreen({trips,loading,onOpen,onJoin,onCreate,onRemove}){
 function TripScreen({trip,code,rates,syncStatus,onBack,onUpdate}){
   const cats=trip.categories||DEFAULT_CATS;
   const myIdentity=localStorage.getItem("tl-who-"+code)||trip.members?.[0]||"我";
-  const[cur,setCur]=useState("JPY");
+  const savedCur=localStorage.getItem("tl-cur-"+code)||"JPY";
+  const[cur,setCur]=useState(savedCur);
+
+  const setAndSaveCur=c=>{setCur(c);localStorage.setItem("tl-cur-"+code,c);};
   const[amt,setAmt]=useState("");
   const[iName,setIName]=useState("");
   const[cat,setCat]=useState(cats[0]||"餐飲");
@@ -637,7 +644,7 @@ function TripScreen({trip,code,rates,syncStatus,onBack,onUpdate}){
         },shared?"✓ 連結已複製！":"🔗 分享行程（複製連結）")
       ),
       h("div",{style:{display:"flex",gap:8,overflowX:"auto",paddingBottom:14}},
-        CUR.map(c=>btn(c.flag+" "+c.name,()=>setCur(c.code),{flexShrink:0,padding:"6px 14px",borderRadius:999,background:cur===c.code?"#38bdf8":"rgba(255,255,255,.08)",color:cur===c.code?"#0f172a":"#94a3b8",fontWeight:cur===c.code?700:500,fontSize:13}))
+        CUR.map(c=>btn(c.flag+" "+c.name,()=>setAndSaveCur(c.code),{flexShrink:0,padding:"6px 14px",borderRadius:999,background:cur===c.code?"#38bdf8":"rgba(255,255,255,.08)",color:cur===c.code?"#0f172a":"#94a3b8",fontWeight:cur===c.code?700:500,fontSize:13}))
       )
     ),
     /* Rate strip */
