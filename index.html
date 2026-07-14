@@ -4,6 +4,12 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
 <title>旅遊記帳</title>
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="旅遊記帳">
+<meta name="theme-color" content="#1e293b">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -125,6 +131,7 @@ function App(){
   const[liveRates,setLiveRates]=useState({});
   const[loading,setLoading]=useState(false);
   const[syncStatus,setSyncStatus]=useState("");
+  const[whoAmI,setWhoAmI]=useState(null); // {code, members, data} — pending identity selection
   const channelRef=useRef(null);
   const saveTimerRef=useRef(null);
 
@@ -162,7 +169,12 @@ function App(){
     try{
       const data=await dbLoad(code);
       if(!data)throw new Error("找不到行程，請確認邀請碼");
-      setTripData(data);setActiveCode(code);setView("trip");subscribeTrip(code);
+      const saved=localStorage.getItem("tl-who-"+code);
+      if(!saved&&(data.members||[]).length>1){
+        setWhoAmI({code,members:data.members,data});
+      }else{
+        setTripData(data);setActiveCode(code);setView("trip");subscribeTrip(code);
+      }
     }catch(e){alert(e.message);}
     finally{setLoading(false);}
   };
@@ -190,6 +202,8 @@ function App(){
     setLoading(true);
     try{
       await dbSave(code,data);
+      // Creator defaults to first member
+      if((meta.members||[]).length>0)localStorage.setItem("tl-who-"+code,meta.members[0]);
       saveMyTrips([{code,...meta,created:data.created},...myTrips]);
       setTripData(data);setActiveCode(code);setView("trip");subscribeTrip(code);
     }catch(e){alert("建立失敗: "+e.message);}
@@ -204,7 +218,12 @@ function App(){
       const data=await dbLoad(clean);
       if(!data)throw new Error("找不到行程，請確認邀請碼");
       saveMyTrips([...myTrips,{code:clean,name:data.name,emoji:data.emoji,members:data.members,created:data.created}]);
-      setTripData(data);setActiveCode(clean);setView("trip");subscribeTrip(clean);
+      const saved=localStorage.getItem("tl-who-"+clean);
+      if(!saved&&(data.members||[]).length>1){
+        setWhoAmI({code:clean,members:data.members,data});
+      }else{
+        setTripData(data);setActiveCode(clean);setView("trip");subscribeTrip(clean);
+      }
     }catch(e){alert(e.message);}
     finally{setLoading(false);}
   };
@@ -225,6 +244,23 @@ function App(){
       onOpen:openTrip,onJoin:joinTrip,onCreate:createTrip,
       onRemove:code=>saveMyTrips(myTrips.filter(t=>t.code!==code))
     }),
+    whoAmI&&h("div",{style:{position:"fixed",inset:0,background:"rgba(0,0,0,.65)",zIndex:200,display:"flex",alignItems:"flex-end"}},
+      h("div",{style:{width:"100%",background:"#fff",borderRadius:"20px 20px 0 0",padding:24,paddingBottom:40}},
+        h("div",{style:{fontWeight:700,fontSize:18,color:"#1e293b",marginBottom:6}},"你是哪位成員？"),
+        h("div",{style:{fontSize:13,color:"#64748b",marginBottom:20}},"選擇後，記帳時會預設由你付款"),
+        h("div",{style:{display:"flex",flexDirection:"column",gap:10}},
+          (whoAmI.members||[]).map((m,i)=>
+            h("button",{key:m,onClick:()=>{
+              localStorage.setItem("tl-who-"+whoAmI.code,m);
+              setTripData(whoAmI.data);setActiveCode(whoAmI.code);
+              setWhoAmI(null);setView("trip");subscribeTrip(whoAmI.code);
+            },style:{padding:"14px 20px",border:"2px solid",borderColor:COLORS[i%COLORS.length],borderRadius:14,background:"#fff",color:"#1e293b",fontWeight:700,fontSize:16,cursor:"pointer",textAlign:"left",display:"flex",alignItems:"center",gap:12}},
+              h("div",{style:{width:12,height:12,borderRadius:"50%",background:COLORS[i%COLORS.length]}}),m
+            )
+          )
+        )
+      )
+    ),
     loading&&h("div",{style:{position:"fixed",inset:0,background:"rgba(0,0,0,.4)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:300}},
       h("div",{style:{background:"#1e293b",color:"#94a3b8",padding:"20px 32px",borderRadius:16,fontSize:14}},"載入中…")
     )
@@ -294,7 +330,7 @@ function HomeScreen({trips,loading,onOpen,onJoin,onCreate,onRemove}){
         h("button",{onClick:create,disabled:!name.trim(),style:{flex:2,padding:"12px 0",border:"none",borderRadius:12,background:name.trim()?"#1e293b":"#e2e8f0",color:name.trim()?"#fff":"#94a3b8",fontWeight:700,fontSize:14,cursor:"pointer"}},"建立行程")
       )
     ),
-    h("div",{style:{padding:"16px 16px 40px"}},
+    h("div",{style:{padding:"16px 16px 0"}},
       trips.length===0&&!showNew&&!showJoin&&h("div",{style:{textAlign:"center",padding:"64px 0",color:"#94a3b8"}},
         h("div",{style:{fontSize:48,marginBottom:12}},"✈️"),
         h("div",{style:{fontSize:16,fontWeight:600,marginBottom:6}},"尚無行程"),
@@ -320,6 +356,9 @@ function HomeScreen({trips,loading,onOpen,onJoin,onCreate,onRemove}){
             :h("button",{onClick:e=>{e.stopPropagation();setDelCode(trip.code);},style:{fontSize:12,color:"#fca5a5",background:"none",border:"none",cursor:"pointer"}},"從我的清單移除")
         )
       ))
+    ),
+    h("div",{style:{textAlign:"center",padding:"24px 0 40px",color:"#94a3b8",fontSize:12}},
+      "IG ",h("a",{href:"https://www.instagram.com/senbei.store",target:"_blank",style:{color:"#38bdf8",textDecoration:"none",fontWeight:600}},"@senbei.store")," 監製此網站"
     )
   );
 }
@@ -327,13 +366,16 @@ function HomeScreen({trips,loading,onOpen,onJoin,onCreate,onRemove}){
 /* ── Trip Screen ── */
 function TripScreen({trip,code,rates,syncStatus,onBack,onUpdate}){
   const cats=trip.categories||DEFAULT_CATS;
+  const myIdentity=localStorage.getItem("tl-who-"+code)||trip.members?.[0]||"我";
   const[cur,setCur]=useState("JPY");
   const[amt,setAmt]=useState("");
   const[iName,setIName]=useState("");
   const[cat,setCat]=useState(cats[0]||"餐飲");
   const[pay,setPay]=useState("cash");
   const[fee,setFee]=useState("1.5");
-  const[by,setBy]=useState(trip.members?.[0]||"我");
+  const[by,setBy]=useState(myIdentity);
+
+  const setByAndSave=m=>{setBy(m);localStorage.setItem("tl-who-"+code,m);};
   const[editR,setEditR]=useState(false);
   const[rIn,setRIn]=useState("");
   const[inv,setInv]=useState(false);
@@ -511,7 +553,7 @@ function TripScreen({trip,code,rates,syncStatus,onBack,onUpdate}){
         (trip.members||[]).length>0&&h("div",{style:{marginBottom:12}},
           h("div",{style:{fontSize:11,color:"#94a3b8",fontWeight:600,marginBottom:6}},"誰付款"),
           h("div",{style:{display:"flex",gap:6,flexWrap:"wrap"}},
-            (trip.members||[]).map((m,i)=>btn(m,()=>setBy(m),{padding:"5px 14px",borderRadius:999,border:"2px solid",borderColor:by===m?COLORS[i%COLORS.length]:"#e2e8f0",background:by===m?COLORS[i%COLORS.length]:"#fff",color:by===m?"#fff":"#64748b",fontWeight:by===m?700:500,fontSize:13}))
+            (trip.members||[]).map((m,i)=>btn(m,()=>setByAndSave(m),{padding:"5px 14px",borderRadius:999,border:"2px solid",borderColor:by===m?COLORS[i%COLORS.length]:"#e2e8f0",background:by===m?COLORS[i%COLORS.length]:"#fff",color:by===m?"#fff":"#64748b",fontWeight:by===m?700:500,fontSize:13}))
           )
         ),
 
@@ -676,6 +718,13 @@ function TripScreen({trip,code,rates,syncStatus,onBack,onUpdate}){
 }
 
 ReactDOM.createRoot(document.getElementById("root")).render(h(App));
+
+// Register service worker for PWA
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/Travel-/sw.js').catch(() => {});
+  });
+}
 </script>
 </body>
 </html>
