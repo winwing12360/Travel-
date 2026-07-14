@@ -236,23 +236,16 @@ function App(){
     return()=>document.removeEventListener("visibilitychange",handleVisibility);
   },[activeCode,subscribeTrip]);
 
-  // Polling + focus refresh for PWA mode
+  // Re-fetch on visibility change only
   useEffect(()=>{
     if(!activeCode)return;
     const refresh=async()=>{
-      try{const data=await dbLoad(activeCode);if(data)setTripData(data);}catch{}
+      if(document.visibilityState==="visible"){
+        try{const data=await dbLoad(activeCode);if(data)setTripData(data);}catch{}
+      }
     };
-    // Poll every 8 seconds
-    const interval=setInterval(refresh,8000);
-    // Also refresh on window focus (PWA switch back)
-    window.addEventListener("focus",refresh);
-    document.addEventListener("visibilitychange",()=>{
-      if(document.visibilityState==="visible")refresh();
-    });
-    return()=>{
-      clearInterval(interval);
-      window.removeEventListener("focus",refresh);
-    };
+    document.addEventListener("visibilitychange",refresh);
+    return()=>document.removeEventListener("visibilitychange",refresh);
   },[activeCode]);
 
   const subscribeTrip=useCallback((code)=>{
