@@ -48,6 +48,11 @@ const CUR=[
   {code:"CNY",name:"人民幣",flag:"🇨🇳",sym:"¥",key:"cny"},
   {code:"KRW",name:"韓元",flag:"🇰🇷",sym:"₩",key:"krw"},
   {code:"HKD",name:"港幣",flag:"🇭🇰",sym:"",key:"hkd"},
+  {code:"THB",name:"泰銖",flag:"🇹🇭",sym:"฿",key:"thb"},
+  {code:"SGD",name:"星幣",flag:"🇸🇬",sym:"",key:"sgd"},
+  {code:"MYR",name:"馬幣",flag:"🇲🇾",sym:"",key:"myr"},
+  {code:"AUD",name:"澳幣",flag:"🇦🇺",sym:"",key:"aud"},
+  {code:"GBP",name:"英鎊",flag:"🇬🇧",sym:"£",key:"gbp"},
   {code:"USD",name:"美元",flag:"🇺🇸",sym:"",key:"usd"},
   {code:"EUR",name:"歐元",flag:"🇪🇺",sym:"€",key:"eur"},
   {code:"TWD",name:"台幣",flag:"🇹🇼",sym:"",key:"twd"},
@@ -223,7 +228,7 @@ function App(){
       }).catch(()=>{
         fetch("https://open.er-api.com/v6/latest/TWD")
           .then(r=>r.json()).then(d=>{
-            if(d.rates){const r={};CUR.forEach(c=>{if(d.rates[c.code])r[c.code]=1/d.rates[c.code];});setLiveRates(r);}
+            if(d.rates){const r={};CUR.forEach(c=>{if(c.code==="TWD"){r["TWD"]=1;return;}if(d.rates[c.code])r[c.code]=1/d.rates[c.code];});setLiveRates(r);}
           }).catch(()=>{});
       });
   },[]);
