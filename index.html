@@ -23,7 +23,18 @@ input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-
 </style>
 </head>
 <body>
-<div id="root"><div style="display:flex;align-items:center;justify-content:center;height:100vh;background:#1e293b;color:#94a3b8;font-family:system-ui">載入中…</div></div>
+<div id="root"><div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;background:#1e293b;color:#94a3b8;font-family:system-ui;gap:12px">
+  <div style="font-size:32px">✈️</div>
+  <div style="font-size:15px">載入中…</div>
+</div></div>
+<script>
+setTimeout(function(){
+  var el=document.getElementById('root');
+  if(el&&el.textContent.includes('載入中')){
+    el.innerHTML='<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;background:#1e293b;font-family:system-ui;gap:16px;padding:24px;text-align:center"><div style="font-size:40px">✈️</div><div style="color:#f1f5f9;font-size:16px;font-weight:600">載入失敗</div><div style="color:#64748b;font-size:13px">請確認網路後重試</div><button onclick="location.reload()" style="background:#38bdf8;color:#0f172a;border:none;border-radius:12px;padding:13px 32px;font-size:15px;font-weight:700;cursor:pointer;margin-top:8px">重新整理</button></div>';
+  }
+},8000);
+</script>
 <script>
 'use strict';
 const{useState,useEffect,useRef,useCallback}=React;
