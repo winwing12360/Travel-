@@ -133,42 +133,37 @@ function PieChart({name,memberColor,items,cats}){
 /* ── Who Am I Panel ── */
 function WhoAmIPanel({onConfirm,members}){
   const[name,setName]=useState("");
-  const[addNew,setAddNew]=useState(!members||members.length===0);
+  const matched=members.find(m=>m.trim()===name.trim());
   return h("div",{style:{position:"fixed",inset:0,background:"rgba(0,0,0,.65)",zIndex:200,display:"flex",alignItems:"flex-end"}},
     h("div",{style:{width:"100%",background:"#fff",borderRadius:"24px 24px 0 0",padding:28,paddingBottom:44}},
-      h("div",{style:{fontWeight:800,fontSize:20,color:"#0f172a",marginBottom:6}},"你是哪位？"),
-      h("div",{style:{fontSize:13,color:"#64748b",lineHeight:1.6,marginBottom:20}},"選擇你的名字，或新增自己加入行程。"),
-      /* Existing members */
-      (members||[]).length>0&&h("div",null,
-        h("div",{style:{fontSize:11,color:"#94a3b8",fontWeight:600,marginBottom:10}})  ,
-        h("div",{style:{display:"flex",flexDirection:"column",gap:10,marginBottom:16}},
-          (members||[]).map((m,i)=>
-            h("button",{key:m,onClick:()=>onConfirm(m),
-              style:{padding:"14px 20px",border:"2px solid",borderColor:COLORS[i%COLORS.length],
-                borderRadius:14,background:"#fff",color:"#1e293b",fontWeight:700,fontSize:16,
-                cursor:"pointer",textAlign:"left",display:"flex",alignItems:"center",gap:12}},
-              h("div",{style:{width:12,height:12,borderRadius:"50%",background:COLORS[i%COLORS.length]}}),m
-            )
-          )
-        ),
-        !addNew&&h("button",{onClick:()=>setAddNew(true),
-          style:{width:"100%",padding:"11px 0",border:"1.5px dashed #e2e8f0",borderRadius:12,
-            background:"none",color:"#64748b",fontSize:14,cursor:"pointer",marginBottom:8}},
-          "＋ 我不在列表裡，新增名字")
+      h("div",{style:{fontWeight:800,fontSize:20,color:"#0f172a",marginBottom:6}},"你叫什麼名字？"),
+      h("div",{style:{fontSize:13,color:"#64748b",lineHeight:1.6,marginBottom:20}},"輸入你的名字加入行程，記帳時預設由你付款。"),
+      h("input",{autoFocus:true,value:name,onChange:e=>setName(e.target.value),
+        onKeyDown:e=>e.key==="Enter"&&name.trim()&&onConfirm(name.trim()),
+        placeholder:"輸入你的名字…",
+        style:{width:"100%",border:"2px solid "+(matched?"#10b981":"#e2e8f0"),borderRadius:14,
+          padding:"14px 16px",fontSize:17,outline:"none",color:"#0f172a",
+          marginBottom:12,boxSizing:"border-box",
+          background:matched?"#f0fdf4":"#fff"}}),
+      matched&&h("div",{style:{fontSize:12,color:"#10b981",marginBottom:12}},
+        "✓ 找到「"+matched+"」，點加入即可"
       ),
-      /* Add new */
-      addNew&&h("div",null,
-        (members||[]).length>0&&h("div",{style:{fontSize:12,color:"#94a3b8",marginBottom:8}},"新增名字："),
-        h("input",{autoFocus:true,value:name,onChange:e=>setName(e.target.value),
-          onKeyDown:e=>e.key==="Enter"&&name.trim()&&onConfirm(name.trim()),
-          placeholder:"例：媽媽、小明…",
-          style:{width:"100%",border:"2px solid #e2e8f0",borderRadius:14,padding:"14px 16px",
-            fontSize:17,outline:"none",color:"#0f172a",marginBottom:16,boxSizing:"border-box"}}),
-        h("button",{onClick:()=>name.trim()&&onConfirm(name.trim()),disabled:!name.trim(),
-          style:{width:"100%",padding:"14px 0",border:"none",borderRadius:14,
-            background:name.trim()?"#1a2744":"#e2e8f0",
-            color:name.trim()?"#fff":"#94a3b8",fontWeight:700,fontSize:16,cursor:"pointer"}},
-          "加入行程")
+      h("button",{onClick:()=>name.trim()&&onConfirm(name.trim()),disabled:!name.trim(),
+        style:{width:"100%",padding:"14px 0",border:"none",borderRadius:14,
+          background:name.trim()?"#1a2744":"#e2e8f0",
+          color:name.trim()?"#fff":"#94a3b8",fontWeight:700,fontSize:16,cursor:"pointer",marginBottom:16}},
+        "加入行程"
+      ),
+      members.length>0&&h("div",null,
+        h("div",{style:{fontSize:11,color:"#94a3b8",textAlign:"center",marginBottom:8}},"行程已有成員："),
+        h("div",{style:{display:"flex",gap:8,flexWrap:"wrap",justifyContent:"center"}},
+          members.map((m,i)=>
+            h("button",{key:m,onClick:()=>setName(m),
+              style:{padding:"5px 14px",borderRadius:999,border:"1.5px solid",
+                borderColor:COLORS[i%COLORS.length]+"66",
+                background:"#f8fafc",color:"#475569",fontSize:13,cursor:"pointer"}},m)
+          )
+        )
       )
     )
   );
@@ -197,6 +192,8 @@ function App(){
   const[loading,setLoading]=useState(false);
   const[loaded,setLoaded]=useState(false);
   const[syncStatus,setSyncStatus]=useState("");
+  const[toast,setToast]=useState("");
+  const showToast=msg=>{setToast(msg);setTimeout(()=>setToast(""),3000);};
   const[whoAmI,setWhoAmI]=useState(null);
   const[pendingJoin,setPendingJoin]=useState(null); // {code, members, data} — pending identity selection
   const channelRef=useRef(null);
@@ -277,7 +274,7 @@ function App(){
       }else{
         setTripData(data);setActiveCode(code);setView("trip");subscribeTrip(code);
       }
-    }catch(e){alert(e.message);}
+    }catch(e){showToast(e.message||"網路連線失敗，請確認網路後重試");}
     finally{setLoading(false);}
   };
 
@@ -306,7 +303,7 @@ function App(){
       // Creator defaults to first member
       if((meta.members||[]).length>0)localStorage.setItem("tl-who-"+code,meta.members[0]);
       saveMyTrips([{code,...meta,created:data.created},...myTrips]);      setTripData(data);setActiveCode(code);setView("trip");subscribeTrip(code);
-    }catch(e){alert("建立失敗: "+e.message);}
+    }catch(e){showToast("建立失敗："+e.message);}
     finally{setLoading(false);}
   };
 
@@ -324,7 +321,7 @@ function App(){
       }else{
         setTripData(data);setActiveCode(clean);setView("trip");subscribeTrip(clean);
       }
-    }catch(e){alert(e.message);}
+    }catch(e){showToast(e.message||"網路連線失敗，請確認網路後重試");}
     finally{setLoading(false);}
   };
 
@@ -360,7 +357,8 @@ function App(){
     }),
     loading&&h("div",{style:{position:"fixed",inset:0,background:"rgba(0,0,0,.4)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:300}},
       h("div",{style:{background:"#1e293b",color:"#94a3b8",padding:"20px 32px",borderRadius:16,fontSize:14}},"載入中…")
-    )
+    ),
+    toast&&h("div",{style:{position:"fixed",bottom:100,left:"50%",transform:"translateX(-50%)",background:"#1e293b",color:"#f1f5f9",padding:"12px 20px",borderRadius:12,fontSize:13,fontWeight:600,zIndex:400,whiteSpace:"nowrap",boxShadow:"0 4px 20px rgba(0,0,0,.3)"}},toast)
   );
 }
 
