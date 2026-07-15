@@ -524,6 +524,8 @@ function HomeScreen({trips,loading,onOpen,onJoin,onCreate,onRemove}){
 function TripScreen({trip,code,rates,syncStatus,onBack,onUpdate,onRefresh}){
   const cats=trip.categories||DEFAULT_CATS;
   const[myIdentity,setMyIdentity]=useState(localStorage.getItem("tl-who-"+code)||trip.members?.[0]||"我");
+  // Ensure current user always appears in payer list, even if realtime update lagged
+  const displayMembers=trip.members?.includes(myIdentity)?trip.members:[...(trip.members||[]),myIdentity];
   const savedCur=localStorage.getItem("tl-cur-"+code)||"JPY";
   const[cur,setCur]=useState(savedCur);
 
@@ -729,10 +731,10 @@ function TripScreen({trip,code,rates,syncStatus,onBack,onUpdate,onRefresh}){
           style:{width:"100%",border:"none",borderBottom:"1.5px solid #e2e8f0",padding:"8px 0",fontSize:15,color:"#334155",outline:"none",marginBottom:12,background:"transparent"}}),
 
         /* Payer */
-        (trip.members||[]).length>0&&h("div",{style:{marginBottom:12}},
+        displayMembers.length>0&&h("div",{style:{marginBottom:12}},
           h("div",{style:{fontSize:11,color:"#94a3b8",fontWeight:600,marginBottom:6}},"誰付款"),
           h("div",{style:{display:"flex",gap:6,flexWrap:"wrap"}},
-            (trip.members||[]).map((m,i)=>btn(m,()=>setByAndSave(m),{padding:"5px 14px",borderRadius:999,border:"2px solid",borderColor:by===m?COLORS[i%COLORS.length]:"#e2e8f0",background:by===m?COLORS[i%COLORS.length]:"#fff",color:by===m?"#fff":"#64748b",fontWeight:by===m?700:500,fontSize:13}))
+            displayMembers.map((m,i)=>btn(m,()=>setByAndSave(m),{padding:"5px 14px",borderRadius:999,border:"2px solid",borderColor:by===m?COLORS[i%COLORS.length]:"#e2e8f0",background:by===m?COLORS[i%COLORS.length]:"#fff",color:by===m?"#fff":"#64748b",fontWeight:by===m?700:500,fontSize:13}))
           )
         ),
 
@@ -920,10 +922,14 @@ function TripScreen({trip,code,rates,syncStatus,onBack,onUpdate,onRefresh}){
     /* Identity change panel */
     showWhoAmI&&h(WhoAmIPanel,{
       members:trip.members||[],
-      onConfirm:(name)=>{
+      onConfirm:async(name)=>{
         localStorage.setItem("tl-who-"+code,name);
-        setBy(name);
         setMyIdentity(name);
+        setBy(name);
+        // Add to members if not already there
+        if(!(trip.members||[]).includes(name)){
+          onUpdate(t=>({...t,members:[...(t.members||[]),name]}));
+        }
         setShowWhoAmI(false);
       }
     })
