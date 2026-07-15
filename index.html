@@ -333,7 +333,10 @@ function App(){
 
   if(view==="trip"&&tripData&&activeCode)return h(TripScreen,{
     trip:tripData,code:activeCode,rates:liveRates,syncStatus,
-    onBack:leaveView,onUpdate:updateTrip
+    onBack:leaveView,onUpdate:updateTrip,
+    onRefresh:async()=>{
+      try{const data=await dbLoad(activeCode);if(data)setTripData(data);}catch{}
+    }
   });
 
   return h("div",null,
@@ -517,7 +520,7 @@ function HomeScreen({trips,loading,onOpen,onJoin,onCreate,onRemove}){
 }
 
 /* ── Trip Screen ── */
-function TripScreen({trip,code,rates,syncStatus,onBack,onUpdate}){
+function TripScreen({trip,code,rates,syncStatus,onBack,onUpdate,onRefresh}){
   const cats=trip.categories||DEFAULT_CATS;
   const[myIdentity,setMyIdentity]=useState(localStorage.getItem("tl-who-"+code)||trip.members?.[0]||"我");
   const savedCur=localStorage.getItem("tl-cur-"+code)||"JPY";
@@ -630,9 +633,7 @@ function TripScreen({trip,code,rates,syncStatus,onBack,onUpdate}){
         btn("‹ 返回",onBack,{background:"none",color:"#38bdf8",fontSize:15,padding:0,fontWeight:600}),
         h("div",{style:{display:"flex",alignItems:"center",gap:8}},
           btn("我是 "+myIdentity,()=>setShowWhoAmI(true),{background:"rgba(255,255,255,.1)",color:"#94a3b8",borderRadius:8,padding:"5px 10px",fontSize:11,fontWeight:600}),
-          btn("↻",async()=>{
-            try{const data=await dbLoad(code);if(data)onUpdate(()=>data);}catch{}
-          },{background:"rgba(255,255,255,.1)",color:"#94a3b8",borderRadius:8,padding:"4px 10px",fontSize:18}),
+          btn("↻",onRefresh,{background:"rgba(255,255,255,.1)",color:"#94a3b8",borderRadius:8,padding:"4px 10px",fontSize:18}),
           syncStatus&&h("div",{style:{width:8,height:8,borderRadius:"50%",background:syncColor}}),
           items.length>0&&h("div",{style:{textAlign:"right"}},
             h("div",{style:{color:"#64748b",fontSize:11}},items.length+" 筆 · 合計"),
