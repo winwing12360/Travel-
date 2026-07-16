@@ -957,6 +957,12 @@ function TripScreen({trip,code,rates,syncStatus,onBack,onUpdate,onRefresh}){
 }
 
 ReactDOM.createRoot(document.getElementById("root")).render(h(ErrBound,null,h(App)));
+
+if('serviceWorker' in navigator){
+  window.addEventListener('load',()=>{
+    navigator.serviceWorker.register('/sw.js').catch(()=>{});
+  });
+}
 </script>
 </body>
 </html>
