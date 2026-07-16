@@ -31,7 +31,7 @@ input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-
 setTimeout(function(){
   var el=document.getElementById('root');
   if(el&&el.textContent.includes('載入中')){
-    el.innerHTML='<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;background:#1e293b;font-family:system-ui;gap:16px;padding:24px;text-align:center"><div style="font-size:40px">✈️</div><div style="color:#f1f5f9;font-size:16px;font-weight:600">載入失敗</div><div style="color:#64748b;font-size:13px;line-height:1.8">請確認網路後重試<br>持續無法使用請私訊<br><span style="color:#38bdf8">@senbei.store</span></div><button onclick="location.reload()" style="background:#38bdf8;color:#0f172a;border:none;border-radius:12px;padding:13px 32px;font-size:15px;font-weight:700;cursor:pointer;margin-top:8px">重新整理</button></div>';
+    el.innerHTML='<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;background:#1e293b;font-family:system-ui;gap:16px;padding:24px;text-align:center"><div style="font-size:40px">✈️</div><div style="color:#f1f5f9;font-size:16px;font-weight:600">載入失敗</div><div style="color:#64748b;font-size:13px;line-height:1.8">請重新整理後再試<br>若持續失敗請換手機網路（4G/5G）再開</div><button onclick="location.reload()" style="background:#38bdf8;color:#0f172a;border:none;border-radius:12px;padding:13px 32px;font-size:15px;font-weight:700;cursor:pointer;margin-top:8px">重新整理</button></div>';
   }
 },8000);
 </script>
@@ -196,7 +196,7 @@ class ErrBound extends React.Component{
     if(this.state.err)return h("div",{style:{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",height:"100vh",background:"#1e293b",fontFamily:"system-ui",gap:16,padding:24,textAlign:"center"}},
       h("div",{style:{fontSize:40}},"✈️"),
       h("div",{style:{color:"#f1f5f9",fontSize:16,fontWeight:600}},"出了一點問題"),
-      h("div",{style:{color:"#64748b",fontSize:13,lineHeight:1.8}},"請重新整理後再試",h("br"),"持續無法使用請私訊開發者",h("br"),h("span",{style:{color:"#38bdf8"}}),"@senbei.store"),
+      h("div",{style:{color:"#64748b",fontSize:13,lineHeight:1.8}},"請重新整理後再試",h("br"),"若持續失敗請換手機網路（4G/5G）再開"),
       h("button",{onClick:()=>location.reload(),style:{background:"#38bdf8",color:"#0f172a",border:"none",borderRadius:12,padding:"13px 32px",fontSize:15,fontWeight:700,cursor:"pointer",marginTop:8}},"重新整理")
     );
     return this.props.children;
@@ -569,6 +569,7 @@ function TripScreen({trip,code,rates,syncStatus,onBack,onUpdate,onRefresh}){
   const[eCat,setEC]=useState("");
   const[eTwd,setETwd]=useState("");
   const[showWhoAmI,setShowWhoAmI]=useState(false);
+  const[showSplit,setShowSplit]=useState(false);
   const[showCode,setShowCode]=useState(false);
   const[copied,setCopied]=useState(false);
   const[shared,setShared]=useState(false);
@@ -911,6 +912,58 @@ function TripScreen({trip,code,rates,syncStatus,onBack,onUpdate,onRefresh}){
             h("div",{style:{display:"flex",alignItems:"center",gap:8}},h("div",{style:{width:8,height:8,borderRadius:"50%",background:COLORS[i%COLORS.length]}}),h("span",{style:{fontSize:14,color:"#334155"}},m)),
             h("span",{style:{fontWeight:700,color:COLORS[i%COLORS.length],fontSize:14}},"NT$"+Math.round(byMember[m]||0).toLocaleString())
           ))
+        ),
+        /* Split calculation */
+        (trip.members||[]).length>1&&grand>0&&h("div",null,
+          h("div",{style:{height:1,background:"#e2e8f0",margin:"10px 0"}}),
+          h("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}},
+            h("div",{style:{fontSize:11,color:"#94a3b8",fontWeight:600,letterSpacing:.5,textTransform:"uppercase"}},"平均分帳"),
+            btn(showSplit?"收起":"計算",()=>setShowSplit(p=>!p),{fontSize:12,color:"#38bdf8",background:"none",fontWeight:600,padding:0})
+          ),
+          h("div",{style:{fontSize:13,color:"#64748b"}},
+            "每人應付 ",h("strong",{style:{color:"#1e293b",fontSize:15}},"NT$"+Math.round(grand/(trip.members||[]).length).toLocaleString()),
+            h("span",{style:{color:"#94a3b8",marginLeft:6,fontSize:12}},"（"+(trip.members||[]).length+"人平分）")
+          ),
+          showSplit&&(()=>{
+            const ms=(trip.members||[]);
+            const per=Math.round(grand/ms.length);
+            const bal=ms.map(m=>({name:m,diff:Math.round(byMember[m]||0)-per}));
+            // Fix rounding: distribute remainder so sum of diffs is exactly 0
+            const rem=bal.reduce((s,b)=>s+b.diff,0);
+            if(rem!==0){
+              const idx=bal.reduce((mi,b,i,a)=>Math.abs(b.diff)>Math.abs(a[mi].diff)?i:mi,0);
+              bal[idx].diff-=rem;
+            }
+            const cr=bal.filter(b=>b.diff>0).sort((a,b)=>b.diff-a.diff).map(b=>({...b}));
+            const de=bal.filter(b=>b.diff<0).sort((a,b)=>a.diff-b.diff).map(b=>({...b}));
+            const tf=[];let i2=0,j2=0;
+            while(i2<cr.length&&j2<de.length){
+              const amt=Math.min(cr[i2].diff,-de[j2].diff);
+              if(amt>0)tf.push({from:de[j2].name,to:cr[i2].name,amt});
+              cr[i2].diff-=amt;de[j2].diff+=amt;
+              if(cr[i2].diff===0)i2++;if(de[j2].diff===0)j2++;
+            }
+            const myRecv=tf.filter(t=>t.to===myIdentity);
+            const myPay=tf.filter(t=>t.from===myIdentity);
+            return h("div",{style:{marginTop:12}},
+              myRecv.length>0&&h("div",{style:{marginBottom:10}},
+                h("div",{style:{fontSize:12,color:"#16a34a",fontWeight:600,marginBottom:6}},"💰 你可以收回"),
+                myRecv.map((t,i3)=>h("div",{key:i3,style:{display:"flex",justifyContent:"space-between",alignItems:"center",background:"#f0fdf4",borderRadius:10,padding:"10px 12px",marginBottom:6}},
+                  h("div",{style:{fontSize:14,color:"#334155"}},h("span",{style:{fontWeight:700,color:"#16a34a"}},t.from),h("span",{style:{color:"#94a3b8",marginLeft:6}},"轉給你")),
+                  h("div",{style:{fontWeight:800,color:"#16a34a",fontSize:15}},"NT$"+t.amt.toLocaleString())
+                ))
+              ),
+              myPay.length>0&&h("div",{style:{marginBottom:10}},
+                h("div",{style:{fontSize:12,color:"#ef4444",fontWeight:600,marginBottom:6}},"💸 你需要轉帳"),
+                myPay.map((t,i3)=>h("div",{key:i3,style:{display:"flex",justifyContent:"space-between",alignItems:"center",background:"#fef2f2",borderRadius:10,padding:"10px 12px",marginBottom:6}},
+                  h("div",{style:{fontSize:14,color:"#334155"}},h("span",{style:{color:"#94a3b8",marginRight:6}},"轉給"),h("span",{style:{fontWeight:700,color:"#ef4444"}},t.to)),
+                  h("div",{style:{fontWeight:800,color:"#ef4444",fontSize:15}},"NT$"+t.amt.toLocaleString())
+                ))
+              ),
+              myRecv.length===0&&myPay.length===0&&h("div",{style:{textAlign:"center",padding:"12px 0",color:"#94a3b8",fontSize:13}},"✓ 你的金額剛好，不需要轉帳"),
+              h("div",{style:{fontSize:11,color:"#cbd5e1",textAlign:"center"}},"＊平均計算，實際依情況調整")
+            );
+          })()
         ),
         hasCard&&h("div",null,
           h("div",{style:{height:1,background:"#e2e8f0",margin:"10px 0"}}),
